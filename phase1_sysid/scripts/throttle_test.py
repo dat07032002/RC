@@ -10,6 +10,7 @@ from std_msgs.msg import UInt16
 from nav_msgs.msg import Odometry
 import numpy as np
 import time
+import sys
 
 class ThrottleTest(Node):
     def __init__(self):
@@ -55,13 +56,14 @@ class ThrottleTest(Node):
         start = time.time()
         self.get_logger().info("Accelerating...")
 
+        # spin_once processes odom_callback AND provides the ~50ms pacing
         while time.time() - start < duration:
-            self.pub_throttle.publish(UInt16(pwm))
-            time.sleep(0.05)
+            self.pub_throttle.publish(UInt16(data=pwm))
+            rclpy.spin_once(self, timeout_sec=0.05)
 
         # Stop
         self.get_logger().info("Stopping...")
-        self.pub_throttle.publish(UInt16(1500))
+        self.pub_throttle.publish(UInt16(data=1500))
         time.sleep(0.5)
 
         # Analyze
@@ -109,16 +111,16 @@ class ThrottleTest(Node):
         # Accelerate to max
         self.get_logger().info("Accelerating to max speed...")
         for _ in range(100):  # 5 seconds at 20Hz
-            self.pub_throttle.publish(UInt16(2000))
-            time.sleep(0.05)
+            self.pub_throttle.publish(UInt16(data=2000))
+            rclpy.spin_once(self, timeout_sec=0.05)
 
         # Coast down
         self.get_logger().info("Coasting down (0% throttle)...")
         start = time.time()
 
         while time.time() - start < 10 and len(self.velocities) < 200:
-            self.pub_throttle.publish(UInt16(1500))  # Neutral throttle
-            time.sleep(0.05)
+            self.pub_throttle.publish(UInt16(data=1500))  # Neutral throttle
+            rclpy.spin_once(self, timeout_sec=0.05)
 
         if len(self.velocities) > 10:
             max_vel = max(self.velocities[:50])  # Peak from acceleration
@@ -142,7 +144,9 @@ if __name__ == '__main__':
     node = ThrottleTest()
 
     print("\nWaiting for first odometry message...")
-    rclpy.spin_once(node, timeout_sec=2)
+    _wait_start = time.time()
+    while not node.velocities and time.time() - _wait_start < 3.0:
+        rclpy.spin_once(node, timeout_sec=0.1)
 
     if not node.velocities:
         node.get_logger().warn("No odometry received! Ensure /odometry/filtered is publishing")
@@ -165,5 +169,5 @@ if __name__ == '__main__':
         node.get_logger().info("Test interrupted by user")
     finally:
         # Ensure motor stops
-        node.pub_throttle.publish(UInt16(1500))
+        node.pub_throttle.publish(UInt16(data=1500))
         rclpy.shutdown()
