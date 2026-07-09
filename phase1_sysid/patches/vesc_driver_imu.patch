@@ -1,0 +1,317 @@
+diff --git a/vesc_ackermann/src/ackermann_to_vesc.cpp b/vesc_ackermann/src/ackermann_to_vesc.cpp
+index e26c4f1..ef3712f 100644
+--- a/vesc_ackermann/src/ackermann_to_vesc.cpp
++++ b/vesc_ackermann/src/ackermann_to_vesc.cpp
+@@ -48,10 +48,10 @@ AckermannToVesc::AckermannToVesc(const rclcpp::NodeOptions & options)
+ : Node("ackermann_to_vesc_node", options)
+ {
+   // get conversion parameters
+-  speed_to_erpm_gain_ = declare_parameter("speed_to_erpm_gain").get<double>();
+-  speed_to_erpm_offset_ = declare_parameter("speed_to_erpm_offset").get<double>();
+-  steering_to_servo_gain_ = declare_parameter("steering_angle_to_servo_gain").get<double>();
+-  steering_to_servo_offset_ = declare_parameter("steering_angle_to_servo_offset").get<double>();
++  speed_to_erpm_gain_ = declare_parameter<double>("speed_to_erpm_gain");
++  speed_to_erpm_offset_ = declare_parameter<double>("speed_to_erpm_offset");
++  steering_to_servo_gain_ = declare_parameter<double>("steering_angle_to_servo_gain");
++  steering_to_servo_offset_ = declare_parameter<double>("steering_angle_to_servo_offset");
+ 
+   // create publishers to vesc electric-RPM (speed) and servo commands
+   erpm_pub_ = create_publisher<Float64>("commands/motor/speed", 10);
+diff --git a/vesc_ackermann/src/vesc_to_odom.cpp b/vesc_ackermann/src/vesc_to_odom.cpp
+index 1deef6c..5437f82 100644
+--- a/vesc_ackermann/src/vesc_to_odom.cpp
++++ b/vesc_ackermann/src/vesc_to_odom.cpp
+@@ -59,13 +59,13 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
+   declare_parameter("base_frame", base_frame_);
+   declare_parameter("use_servo_cmd_to_calc_angular_velocity", use_servo_cmd_);
+ 
+-  speed_to_erpm_gain_ = declare_parameter("speed_to_erpm_gain").get<double>();
+-  speed_to_erpm_offset_ = declare_parameter("speed_to_erpm_offset").get<double>();
++  speed_to_erpm_gain_ = declare_parameter<double>("speed_to_erpm_gain");
++  speed_to_erpm_offset_ = declare_parameter<double>("speed_to_erpm_offset");
+ 
+   if (use_servo_cmd_) {
+-    steering_to_servo_gain_ = declare_parameter("steering_angle_to_servo_gain").get<double>();
+-    steering_to_servo_offset_ = declare_parameter("steering_angle_to_servo_offset").get<double>();
+-    wheelbase_ = declare_parameter("wheelbase").get<double>();
++    steering_to_servo_gain_ = declare_parameter<double>("steering_angle_to_servo_gain");
++    steering_to_servo_offset_ = declare_parameter<double>("steering_angle_to_servo_offset");
++    wheelbase_ = declare_parameter<double>("wheelbase");
+   }
+ 
+   declare_parameter("publish_tf", publish_tf_);
+@@ -83,7 +83,7 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
+     "sensors/core", 10, std::bind(&VescToOdom::vescStateCallback, this, _1));
+ 
+   if (use_servo_cmd_) {
+-    servo_sub_ = create_subscription<VescStateStamped>(
++    servo_sub_ = create_subscription<Float64>(
+       "sensors/servo_position_command", 10, std::bind(&VescToOdom::servoCmdCallback, this, _1));
+   }
+ }
+diff --git a/vesc_driver/include/vesc_driver/vesc_driver.hpp b/vesc_driver/include/vesc_driver/vesc_driver.hpp
+index f879f72..f460066 100644
+--- a/vesc_driver/include/vesc_driver/vesc_driver.hpp
++++ b/vesc_driver/include/vesc_driver/vesc_driver.hpp
+@@ -33,6 +33,7 @@
+ 
+ #include <rclcpp/rclcpp.hpp>
+ #include <std_msgs/msg/float64.hpp>
++#include <sensor_msgs/msg/imu.hpp>
+ #include <vesc_msgs/msg/vesc_state.hpp>
+ #include <vesc_msgs/msg/vesc_state_stamped.hpp>
+ 
+@@ -88,6 +89,7 @@ private:
+   // ROS services
+   rclcpp::Publisher<VescStateStamped>::SharedPtr state_pub_;
+   rclcpp::Publisher<Float64>::SharedPtr servo_sensor_pub_;
++  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_pub_;
+   rclcpp::SubscriptionBase::SharedPtr duty_cycle_sub_;
+   rclcpp::SubscriptionBase::SharedPtr current_sub_;
+   rclcpp::SubscriptionBase::SharedPtr brake_sub_;
+diff --git a/vesc_driver/include/vesc_driver/vesc_interface.hpp b/vesc_driver/include/vesc_driver/vesc_interface.hpp
+index 63724a1..19c63f9 100644
+--- a/vesc_driver/include/vesc_driver/vesc_interface.hpp
++++ b/vesc_driver/include/vesc_driver/vesc_interface.hpp
+@@ -116,6 +116,7 @@ public:
+ 
+   void requestFWVersion();
+   void requestState();
++  void requestImuData();
+   void setDutyCycle(double duty_cycle);
+   void setCurrent(double current);
+   void setBrake(double brake);
+diff --git a/vesc_driver/include/vesc_driver/vesc_packet.hpp b/vesc_driver/include/vesc_driver/vesc_packet.hpp
+index 74ccd72..a4d8c8a 100644
+--- a/vesc_driver/include/vesc_driver/vesc_packet.hpp
++++ b/vesc_driver/include/vesc_driver/vesc_packet.hpp
+@@ -182,6 +182,41 @@ public:
+ };
+ /*------------------------------------------------------------------------------------------------*/
+ 
++class VescPacketImu : public VescPacket
++{
++public:
++  explicit VescPacketImu(std::shared_ptr<VescFrame> raw);
++
++  double roll() const;
++  double pitch() const;
++  double yaw() const;
++  double acc_x() const;   // in G
++  double acc_y() const;
++  double acc_z() const;
++  double gyro_x() const;  // in deg/s
++  double gyro_y() const;
++  double gyro_z() const;
++  double mag_x() const;
++  double mag_y() const;
++  double mag_z() const;
++  double q_w() const;
++  double q_x() const;
++  double q_y() const;
++  double q_z() const;
++  uint16_t mask() const;
++
++private:
++  uint16_t mask_;
++  double vals_[16];  // indexed by IMU field bit: roll,pitch,yaw,ax,ay,az,gx,gy,gz,mx,my,mz,q0,q1,q2,q3
++};
++
++class VescPacketRequestImu : public VescPacket
++{
++public:
++  VescPacketRequestImu();
++};
++/*------------------------------------------------------------------------------------------------*/
++
+ class VescPacketSetDuty : public VescPacket
+ {
+ public:
+diff --git a/vesc_driver/package.xml b/vesc_driver/package.xml
+index ef527ed..a1d5f7c 100644
+--- a/vesc_driver/package.xml
++++ b/vesc_driver/package.xml
+@@ -20,6 +20,7 @@
+   <depend>rclcpp</depend>
+   <depend>rclcpp_components</depend>
+   <depend>std_msgs</depend>
++  <depend>sensor_msgs</depend>
+   <depend>vesc_msgs</depend>
+   <depend>serial_driver</depend>
+ 
+diff --git a/vesc_driver/src/vesc_driver.cpp b/vesc_driver/src/vesc_driver.cpp
+index 5db7395..443fea1 100644
+--- a/vesc_driver/src/vesc_driver.cpp
++++ b/vesc_driver/src/vesc_driver.cpp
+@@ -32,6 +32,7 @@
+ 
+ #include <vesc_msgs/msg/vesc_state.hpp>
+ #include <vesc_msgs/msg/vesc_state_stamped.hpp>
++#include <sensor_msgs/msg/imu.hpp>
+ 
+ #include <cassert>
+ #include <chrono>
+@@ -79,6 +80,9 @@ VescDriver::VescDriver(const rclcpp::NodeOptions & options)
+   // create vesc state (telemetry) publisher
+   state_pub_ = create_publisher<VescStateStamped>("sensors/core", rclcpp::QoS{10});
+ 
++  // IMU data from the VESC's onboard IMU (COMM_GET_IMU_DATA)
++  imu_pub_ = create_publisher<sensor_msgs::msg::Imu>("sensors/imu", rclcpp::QoS{10});
++
+   // since vesc state does not include the servo position, publish the commanded
+   // servo position as a "sensor"
+   servo_sensor_pub_ = create_publisher<Float64>(
+@@ -141,8 +145,9 @@ void VescDriver::timerCallback()
+       driver_mode_ = MODE_OPERATING;
+     }
+   } else if (driver_mode_ == MODE_OPERATING) {
+-    // poll for vesc state (telemetry)
++    // poll for vesc state (telemetry) and IMU data
+     vesc_.requestState();
++    vesc_.requestImuData();
+   } else {
+     // unknown mode, how did that happen?
+     assert(false && "unknown driver mode");
+@@ -184,6 +189,38 @@ void VescDriver::vescPacketCallback(const std::shared_ptr<VescPacket const> & pa
+     state_msg.state.avg_vq = values->avg_vq();
+ 
+     state_pub_->publish(state_msg);
++  } else if (packet->name() == "ImuData") {
++    std::shared_ptr<VescPacketImu const> imu =
++      std::dynamic_pointer_cast<VescPacketImu const>(packet);
++
++    auto imu_msg = sensor_msgs::msg::Imu();
++    imu_msg.header.stamp = now();
++    imu_msg.header.frame_id = "imu";
++
++    // VESC reports acceleration in G and angular rate in deg/s.
++    const double G = 9.80665;
++    const double DEG2RAD = M_PI / 180.0;
++    imu_msg.linear_acceleration.x = imu->acc_x() * G;
++    imu_msg.linear_acceleration.y = imu->acc_y() * G;
++    imu_msg.linear_acceleration.z = imu->acc_z() * G;
++    imu_msg.angular_velocity.x = imu->gyro_x() * DEG2RAD;
++    imu_msg.angular_velocity.y = imu->gyro_y() * DEG2RAD;
++    imu_msg.angular_velocity.z = imu->gyro_z() * DEG2RAD;
++
++    // orientation quaternion (present if the AHRS is enabled on the VESC)
++    if (imu->q_w() != 0.0 || imu->q_x() != 0.0 ||
++      imu->q_y() != 0.0 || imu->q_z() != 0.0)
++    {
++      imu_msg.orientation.w = imu->q_w();
++      imu_msg.orientation.x = imu->q_x();
++      imu_msg.orientation.y = imu->q_y();
++      imu_msg.orientation.z = imu->q_z();
++    } else {
++      // no orientation estimate available
++      imu_msg.orientation_covariance[0] = -1.0;
++    }
++
++    imu_pub_->publish(imu_msg);
+   } else if (packet->name() == "FWVersion") {
+     std::shared_ptr<VescPacketFWVersion const> fw_version =
+       std::dynamic_pointer_cast<VescPacketFWVersion const>(packet);
+diff --git a/vesc_driver/src/vesc_interface.cpp b/vesc_driver/src/vesc_interface.cpp
+index d32b819..7728406 100644
+--- a/vesc_driver/src/vesc_interface.cpp
++++ b/vesc_driver/src/vesc_interface.cpp
+@@ -247,6 +247,11 @@ void VescInterface::requestState()
+   send(VescPacketRequestValues());
+ }
+ 
++void VescInterface::requestImuData()
++{
++  send(VescPacketRequestImu());
++}
++
+ void VescInterface::setDutyCycle(double duty_cycle)
+ {
+   send(VescPacketSetDuty(duty_cycle));
+diff --git a/vesc_driver/src/vesc_packet.cpp b/vesc_driver/src/vesc_packet.cpp
+index 1cb9980..41c4e4a 100644
+--- a/vesc_driver/src/vesc_packet.cpp
++++ b/vesc_driver/src/vesc_packet.cpp
+@@ -413,6 +413,83 @@ VescPacketRequestValues::VescPacketRequestValues()
+ 
+ /*------------------------------------------------------------------------------------------------*/
+ 
++// VESC "portable" float format used by COMM_GET_IMU_DATA (buffer_append_float32_auto).
++// Mirrors buffer_get_float32_auto() from the VESC firmware's buffer.c.
++static double buffer_get_float32_auto(const uint8_t * buf, int * index)
++{
++  uint32_t res =
++    (static_cast<uint32_t>(buf[*index]) << 24) |
++    (static_cast<uint32_t>(buf[*index + 1]) << 16) |
++    (static_cast<uint32_t>(buf[*index + 2]) << 8) |
++    (static_cast<uint32_t>(buf[*index + 3]));
++  *index += 4;
++
++  int e = (res >> 23) & 0xFF;
++  uint32_t sig_i = res & 0x7FFFFF;
++  bool neg = (res & (1u << 31)) != 0;
++
++  float sig = 0.0f;
++  if (e != 0 || sig_i != 0) {
++    sig = static_cast<float>(sig_i) / (8388608.0f * 2.0f) + 0.5f;
++    e -= 126;
++  }
++  if (neg) {
++    sig = -sig;
++  }
++  return static_cast<double>(ldexpf(sig, e));
++}
++
++VescPacketImu::VescPacketImu(std::shared_ptr<VescFrame> raw)
++: VescPacket("ImuData", raw), mask_(0)
++{
++  for (int i = 0; i < 16; ++i) {
++    vals_[i] = 0.0;
++  }
++  const uint8_t * p = &(*(payload_.first + 1));   // skip the COMM id byte
++  int idx = 0;
++  mask_ = (static_cast<uint16_t>(p[0]) << 8) | static_cast<uint16_t>(p[1]);
++  idx += 2;
++  for (int bit = 0; bit < 16; ++bit) {
++    if (mask_ & (1u << bit)) {
++      vals_[bit] = buffer_get_float32_auto(p, &idx);
++    }
++  }
++}
++
++uint16_t VescPacketImu::mask() const {return mask_;}
++double VescPacketImu::roll()   const {return vals_[0];}
++double VescPacketImu::pitch()  const {return vals_[1];}
++double VescPacketImu::yaw()    const {return vals_[2];}
++double VescPacketImu::acc_x()  const {return vals_[3];}
++double VescPacketImu::acc_y()  const {return vals_[4];}
++double VescPacketImu::acc_z()  const {return vals_[5];}
++double VescPacketImu::gyro_x() const {return vals_[6];}
++double VescPacketImu::gyro_y() const {return vals_[7];}
++double VescPacketImu::gyro_z() const {return vals_[8];}
++double VescPacketImu::mag_x()  const {return vals_[9];}
++double VescPacketImu::mag_y()  const {return vals_[10];}
++double VescPacketImu::mag_z()  const {return vals_[11];}
++double VescPacketImu::q_w()    const {return vals_[12];}
++double VescPacketImu::q_x()    const {return vals_[13];}
++double VescPacketImu::q_y()    const {return vals_[14];}
++double VescPacketImu::q_z()    const {return vals_[15];}
++
++REGISTER_PACKET_TYPE(COMM_GET_IMU_DATA, VescPacketImu)
++
++VescPacketRequestImu::VescPacketRequestImu()
++: VescPacket("RequestImuData", 3, COMM_GET_IMU_DATA)
++{
++  // payload: [COMM id][mask hi][mask lo]; mask 0xFFFF -> return all fields
++  *(payload_.first + 1) = 0xFF;
++  *(payload_.first + 2) = 0xFF;
++  uint16_t crc = CRC::Calculate(
++    &(*payload_.first), std::distance(payload_.first, payload_.second), VescFrame::CRC_TYPE);
++  *(frame_->end() - 3) = static_cast<uint8_t>(crc >> 8);
++  *(frame_->end() - 2) = static_cast<uint8_t>(crc & 0xFF);
++}
++
++/*------------------------------------------------------------------------------------------------*/
++
+ 
+ VescPacketSetDuty::VescPacketSetDuty(double duty)
+ : VescPacket("SetDuty", 5, COMM_SET_DUTY)

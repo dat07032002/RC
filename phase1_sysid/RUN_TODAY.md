@@ -55,10 +55,17 @@ python3 ~/RC/phase1_sysid/scripts/latency_test.py \
     --ros-args -r /odometry/filtered:=/odom
 ```
 
-## 5. IMU calibration  — ⛔ BLOCKED
-The installed `vesc_driver` does not publish the VESC's onboard IMU
-(no `COMM_GET_IMU_DATA` support), and no RealSense is connected.
-Options: (a) add IMU support to `vesc_driver`, or (b) add a RealSense/dedicated IMU.
+## 5. IMU calibration  — ✅ now works (patched vesc_driver)
+`vesc_driver` was patched to request `COMM_GET_IMU_DATA` and publish
+`sensor_msgs/Imu` on `/sensors/imu` (~7.5 Hz) from the MkVI's onboard IMU.
+The script listens on `/imu`, so remap:
+```bash
+python3 ~/RC/phase1_sysid/scripts/imu_calib.py \
+    --ros-args -r /imu:=/sensors/imu
+```
+Keep the car **stationary and level** for ~1 minute. Records gyro bias,
+accel bias (Z should be ~9.81; measured ~10.6 raw -> needs the bias/scale
+this test produces), and noise std.
 
 ## Record everything
 ```bash
