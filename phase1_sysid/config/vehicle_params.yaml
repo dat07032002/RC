@@ -1,0 +1,162 @@
+# Roboracer Vehicle Parameters
+# Fill in during Phase 1 System Identification
+# See: implementation_guide.md Phase 1 for measurement procedures
+
+vehicle:
+  wheelbase: 0.XXX  # meters (MEASURE: front wheel center to rear wheel center)
+  track_width: 0.XXX  # meters (MEASURE: left wheel to right wheel)
+  mass: 2.0  # kg estimate
+
+# ============================================================================
+# STEERING CONFIGURATION
+# Measure using servo_test.py - record steering angles at PWM 1000, 1500, 2000
+# ============================================================================
+steering:
+  pwm_center: 1500  # µs (neutral/center position)
+  pwm_left_max: 1000  # µs (full left)
+  pwm_right_max: 2000  # µs (full right)
+
+  # From servo_test.py: measure with phone level app
+  angle_left_max: XXX  # degrees (at PWM 1000)
+  angle_right_max: XXX  # degrees (at PWM 2000)
+  angle_center: 0  # degrees (at PWM 1500)
+
+  # From slow-motion video: measure response time
+  servo_tau: 0.05  # seconds (1st-order lag time constant, typically 0.02-0.1)
+  servo_response_delay: XXX  # ms (time to 90% of final angle)
+
+  max_steering_rate: XXX  # degrees/sec (= max_steering_angle / servo_response_delay)
+
+# ============================================================================
+# THROTTLE CONFIGURATION
+# Measure using throttle_test.py - hold constant throttle, log velocity
+# ============================================================================
+throttle:
+  pwm_center: 1500  # µs (idle/neutral)
+  pwm_idle: 1500  # µs (no throttle)
+  pwm_max_fwd: 2000  # µs (full forward)
+
+  # From throttle_test.py at different levels
+  max_velocity: X.XX  # m/s (at 100% throttle, steady state)
+  max_acceleration: X.XX  # m/s² (initial acceleration from 0% to 100%)
+
+  # From coast-down test: set throttle to 0, measure deceleration
+  friction_coefficient: -X.XX  # m/s² (negative = deceleration)
+
+  # From step response
+  throttle_response_tau: 0.1  # seconds (1st-order lag time constant)
+  throttle_response_delay: XXX  # ms
+
+# ============================================================================
+# KINEMATICS (Bicycle Model)
+# Validate with kinematics_test.py - drive in circles, measure turning radius
+# ============================================================================
+kinematics:
+  wheelbase: 0.XXX  # should match vehicle.wheelbase
+  steering_gain_correction: 1.0  # adjust if kinematic error >10%
+  # Formula: R = L / tan(steering_angle)
+  # If measured_radius >> predicted_radius, increase this factor
+
+# ============================================================================
+# ODOMETRY CALIBRATION
+# From odometry_test.py: drive 10m straight, measure reported distance
+# Correction = ground_truth / reported_distance
+# ============================================================================
+odometry:
+  distance_correction_factor: X.XXX  # apply to wheel encoder distance
+  velocity_correction_factor: X.XXX  # apply to computed velocity
+
+# ============================================================================
+# SENSOR CONFIGURATION
+# ============================================================================
+sensors:
+  lidar:
+    model: "Hokuyo 10LX"
+    frequency: 25  # Hz (typical for Hokuyo 10LX)
+    range_min: 0.0  # meters
+    range_max: 30.0  # meters
+
+    # From lidar_noise_test.py: position at known distances
+    noise_std_at_1m: 0.XXX  # meters (typical: 0.03-0.05)
+    noise_std_at_5m: 0.XXX  # meters (increases with distance)
+    noise_std_at_10m: 0.XXX  # meters
+
+    # Linear model: noise_std = a + b * distance
+    noise_std_coefficient_a: 0.XXX  # intercept (noise at 0m)
+    noise_std_coefficient_b: 0.XXX  # slope (noise per meter)
+
+    outlier_rate: X.XX  # percent (% of NaN/invalid readings)
+
+    # Mounting offsets from rear axle center
+    x_offset: 0.XXX  # meters (forward)
+    y_offset: 0.0  # meters (lateral)
+    z_offset: 0.15  # meters (height, typical)
+
+  imu:
+    # From imu_calib.py: stationary for 1 minute
+    gyro_bias: [X.XXX, X.XXX, X.XXX]  # rad/s (X, Y, Z axes)
+    gyro_noise_std: X.XXX  # rad/s (should be <0.1 rad/s)
+
+    accel_bias: [X.XXX, X.XXX, X.XXX]  # m/s² (Z should be ~9.81 for gravity)
+    accel_noise_std: X.XXX  # m/s²
+
+    mounting:
+      x_offset: 0.0  # meters
+      y_offset: 0.0  # meters
+      z_offset: 0.1  # meters
+
+  camera:
+    enabled: false  # set to true if using camera
+    model: "unknown"
+    resolution: [640, 480]  # width x height
+    # Run camera_calib.py if enabled
+    focal_length_x: XXX  # pixels
+    focal_length_y: XXX  # pixels
+    principal_point_x: XXX  # pixels
+    principal_point_y: XXX  # pixels
+
+# ============================================================================
+# LATENCY BUDGET
+# From latency_test.py: measure each stage, sum for total
+# Target: <100ms total (ideally 50-80ms)
+# ============================================================================
+latency:
+  lidar_frequency_hz: 25
+  lidar_period_ms: 40  # = 1000 / 25
+
+  # Profile with ROS timestamps
+  lidar_to_slam_ms: XXX
+  slam_to_policy_ms: XXX
+  policy_to_motor_ms: XXX
+
+  total_latency_ms: XXX  # sum of above
+  target_latency_ms: 100  # hard limit for real-time control
+
+# ============================================================================
+# ISAAC LAB SIMULATION PARAMETERS
+# These are automatically used when training in Phase 3
+# ============================================================================
+isaac_lab:
+  use_measured_dynamics: true  # use parameters from Phase 1
+  gravity: [0, 0, -9.81]
+
+  # Domain randomization ranges
+  domain_randomization:
+    corridor_width_range: [0.5, 2.0]  # meters
+    num_turns_range: [3, 8]
+    obstacle_density_range: [0.0, 0.5]
+
+    lidar_noise_std: [0.03, 0.10]  # meters
+    imu_gyro_bias_range: [-50, 50]  # deg/s
+    actuator_delay_range: [20, 100]  # ms
+
+# ============================================================================
+# NOTES FOR FILLING IN VALUES
+# ============================================================================
+# XXX = Needs to be measured during Phase 1
+# Most values can be found by following exact procedures in:
+# ~/roboracer_ws/scripts/servo_test.py
+# ~/roboracer_ws/scripts/throttle_test.py
+# ~/roboracer_ws/scripts/lidar_noise_test.py
+# ~/roboracer_ws/scripts/imu_calib.py
+# ~/roboracer_ws/scripts/latency_test.py
