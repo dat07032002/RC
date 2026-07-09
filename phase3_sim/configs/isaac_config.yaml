@@ -1,0 +1,44 @@
+# Isaac Lab Configuration - Phase 3
+
+environment:
+  name: "Roboracer-Isaac-v0"
+  max_steps: 1000
+  dt: 0.01
+
+physics:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+
+robot:
+  mass: 1.0
+  wheelbase: 0.12
+  max_steering: 30
+  max_velocity: 2.0
+
+sensors:
+  lidar:
+    num_rays: 64
+    max_range: 10.0
+    noise_baseline: 0.02
+    noise_per_meter: 0.01
+  imu:
+    accel_noise: 0.005
+    gyro_noise: 0.002
+
+domain_randomization:
+  enabled: true
+  friction:
+    min: 0.3
+    max: 0.8
+  mass:
+    min: 0.9
+    max: 1.1
+  control_delay_steps:
+    min: 1
+    max: 2
+
+training:
+  num_parallel_envs: 8
+  batch_size: 64
+  learning_rate: 3e-4
+
