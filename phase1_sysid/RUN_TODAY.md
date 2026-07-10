@@ -69,14 +69,15 @@ python3 ~/RC/phase1_sysid/scripts/odometry_test.py \
 ```
 Measure the physical start-to-stop distance on the floor and compute:
 `distance_correction_factor = physical_distance_m / odom_distance_m`.
-Saved calibration: center `0.55`, matching runs `2.42 / 2.181` and `2.42 / 2.185`
--> correction `1.109`. A `2.51 / 2.424` run gave `1.035` and is treated as an outlier.
+Saved calibration: center `0.55`, trusted straight run `2.51 / 2.424` -> correction `1.035`.
+The `2.42 / 2.181` and `2.42 / 2.185` runs are documented but not used because the car
+was not as straight.
 
 ## Today's measured values
 - Vehicle geometry: wheelbase `0.33 m`, track width `0.24 m`, mass estimate `3.6 kg`.
 - Steering: servo command center `0.55`; left max about `30 deg`, right max about `25 deg`.
 - Throttle: at low cap, `max_velocity 0.57 m/s`, `max_acceleration 0.61 m/s^2`.
-- Odometry: `distance_correction_factor 1.109`, `velocity_correction_factor 1.109`.
+- Odometry: `distance_correction_factor 1.035`, `velocity_correction_factor 1.035`.
 - Latency: LiDAR-to-odom mean about `11 ms`; LiDAR frequency about `40 Hz`.
 - Remaining: servo response delay/rate, coast-down friction, LiDAR mount offsets, better mass.
 

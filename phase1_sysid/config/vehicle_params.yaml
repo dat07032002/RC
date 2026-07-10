@@ -64,8 +64,8 @@ kinematics:
 # Correction = ground_truth / reported_distance
 # ============================================================================
 odometry:
-  distance_correction_factor: 1.109  # avg of matching 0.55-center runs: 2.42/2.181 and 2.42/2.185
-  velocity_correction_factor: 1.109  # same scale until velocity-specific test
+  distance_correction_factor: 1.035  # trusted straight run: 2.51 m physical / 2.424 m odom
+  velocity_correction_factor: 1.035  # same scale until velocity-specific test
 
 # ============================================================================
 # SENSOR CONFIGURATION

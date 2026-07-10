@@ -64,9 +64,9 @@ so scripts have exclusive control. Verified mapping + watchdog work.
 - **Throttle — PARTIAL DONE**: motor sign fixed; physical forward is now PWM 2000. Low-speed floor
   test with cap gave max velocity `0.57 m/s`, acceleration `0.61 m/s^2`. More space needed for
   coast-down friction and better max-speed curve.
-- **Odometry — DONE enough for sim start**: 0.55-center matching runs:
-  `2.42 m / 2.181 m = 1.110`, `2.42 m / 2.185 m = 1.108`; saved factor `1.109`.
-  One `2.51 m / 2.424 m = 1.035` run is treated as an outlier.
+- **Odometry — DONE enough for sim start**: saved factor `1.035` from the only run the user
+  judged perfectly straight: `2.51 m / 2.424 m = 1.035`. Other 0.55-center runs
+  (`2.42 m / 2.181 m = 1.110`, `2.42 m / 2.185 m = 1.108`) are documented but not used.
 - **Latency — PARTIAL DONE**: corrected scan-to-odom pairing. 15 s sample: mean `11.33 ms`,
   median `7.60 ms`, min `0.02 ms`, max `29.97 ms`, LiDAR frequency `39.9 Hz`.
   Policy-to-motor and motor response latency remain open.
