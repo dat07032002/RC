@@ -18,9 +18,9 @@ control of the VESC. Leave this running in one terminal; run scripts in another.
 Bridge mapping (verified):
 | PWM | Servo (`/commands/servo/position`) | Motor (`/commands/motor/speed`) |
 |-----|-----|-----|
-| 1000 | 0.15 (full left) | −9228 eRPM (rev, capped) |
-| 1500 | 0.50 (center) | 0 (stop) |
-| 2000 | 0.85 (full right) | +9228 eRPM (= 2.0 m/s cap) |
+| 1000 | 0.15 (full left) | +9228 eRPM (physical reverse, capped) |
+| 1500 | 0.55 (calibrated straight center) | 0 (stop) |
+| 2000 | 0.85 (full right) | −9228 eRPM (physical forward, capped) |
 
 Safety: motor **watchdog** commands 0 eRPM if no `/motor/command` for 0.5 s.
 Raise/lower the speed cap with `max_speed_mps:=`.
@@ -44,18 +44,43 @@ Record `angle_left_max`, `angle_center` (should be ~0 — if not, tune
 Odom topic differs, so remap `/odometry/filtered` → `/odom`:
 ```bash
 python3 ~/RC/phase1_sysid/scripts/throttle_test.py \
-    --ros-args -r /odometry/filtered:=/odom
+    --odom-topic /odom
 ```
 Start with `max_speed_mps:=1.0` in the launch until you trust it, then raise.
 Measures `max_velocity`, `max_acceleration`, coast-down friction.
 
+For the available ~6 m floor, use the short capped test:
+```bash
+python3 ~/RC/phase1_sysid/scripts/throttle_test.py \
+    --levels 100 --duration 1.0 --skip-coast-down --odom-topic /odom
+```
+
 ## 4. Latency  — remap odom too
 ```bash
 python3 ~/RC/phase1_sysid/scripts/latency_test.py \
-    --ros-args -r /odometry/filtered:=/odom
+    --duration 15 --odom-topic /odom
 ```
 
-## 5. IMU calibration  — ✅ now works (patched vesc_driver)
+## 5. Odometry distance calibration — fits ~6 m floor
+Start with the low speed cap, e.g. `max_speed_mps:=0.3`, then run:
+```bash
+python3 ~/RC/phase1_sysid/scripts/odometry_test.py \
+    --duration 8 --odom-topic /odom
+```
+Measure the physical start-to-stop distance on the floor and compute:
+`distance_correction_factor = physical_distance_m / odom_distance_m`.
+Saved calibration: center `0.55`, matching runs `2.42 / 2.181` and `2.42 / 2.185`
+-> correction `1.109`. A `2.51 / 2.424` run gave `1.035` and is treated as an outlier.
+
+## Today's measured values
+- Vehicle geometry: wheelbase `0.33 m`, track width `0.24 m`, mass estimate `3.6 kg`.
+- Steering: servo command center `0.55`; left max about `30 deg`, right max about `25 deg`.
+- Throttle: at low cap, `max_velocity 0.57 m/s`, `max_acceleration 0.61 m/s^2`.
+- Odometry: `distance_correction_factor 1.109`, `velocity_correction_factor 1.109`.
+- Latency: LiDAR-to-odom mean about `11 ms`; LiDAR frequency about `40 Hz`.
+- Remaining: servo response delay/rate, coast-down friction, LiDAR mount offsets, better mass.
+
+## 6. IMU calibration  — ✅ now works (patched vesc_driver)
 `vesc_driver` was patched to request `COMM_GET_IMU_DATA` and publish
 `sensor_msgs/Imu` on `/sensors/imu` (~7.5 Hz) from the MkVI's onboard IMU.
 The script listens on `/imu`, so remap:

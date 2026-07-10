@@ -31,13 +31,17 @@ class PwmVescBridge(Node):
         # --- parameters (override on the command line if needed) ---
         self.declare_parameter('speed_to_erpm_gain', 4614.0)   # from vesc.yaml
         self.declare_parameter('max_speed_mps', 2.0)           # SAFETY cap
-        self.declare_parameter('servo_min', 0.15)              # from vesc.yaml
-        self.declare_parameter('servo_max', 0.85)              # from vesc.yaml
+        self.declare_parameter('motor_sign', -1.0)             # +PWM was physically reverse
+        self.declare_parameter('servo_min', 0.15)              # full left
+        self.declare_parameter('servo_center', 0.55)           # calibrated straight-ahead
+        self.declare_parameter('servo_max', 0.85)              # full right
         self.declare_parameter('cmd_timeout', 0.5)             # motor watchdog (s)
 
         self.k_erpm   = self.get_parameter('speed_to_erpm_gain').value
         self.max_mps  = self.get_parameter('max_speed_mps').value
+        self.motor_sign = self.get_parameter('motor_sign').value
         self.servo_lo = self.get_parameter('servo_min').value
+        self.servo_mid = self.get_parameter('servo_center').value
         self.servo_hi = self.get_parameter('servo_max').value
         self.timeout  = self.get_parameter('cmd_timeout').value
 
@@ -56,7 +60,9 @@ class PwmVescBridge(Node):
 
         self.get_logger().info(
             f"PWM->VESC bridge up. max_speed={self.max_mps} m/s "
-            f"(={self.max_erpm:.0f} eRPM cap), servo=[{self.servo_lo},{self.servo_hi}], "
+            f"(={self.max_erpm:.0f} eRPM cap), "
+            f"servo=[{self.servo_lo},{self.servo_mid},{self.servo_hi}], "
+            f"motor_sign={self.motor_sign}, "
             f"motor watchdog={self.timeout}s")
 
     @staticmethod
@@ -64,16 +70,21 @@ class PwmVescBridge(Node):
         return max(lo, min(hi, x))
 
     def on_servo(self, msg):
-        # 1000..2000 us -> servo_lo..servo_hi  (1500 -> midpoint)
-        frac = self._clamp((msg.data - 1000) / 1000.0, 0.0, 1.0)
-        pos = self.servo_lo + frac * (self.servo_hi - self.servo_lo)
+        # Piecewise map so PWM 1500 holds calibrated straight-ahead steering.
+        pwm = self._clamp(msg.data, 1000, 2000)
+        if pwm <= 1500:
+            frac = (pwm - 1000) / 500.0
+            pos = self.servo_lo + frac * (self.servo_mid - self.servo_lo)
+        else:
+            frac = (pwm - 1500) / 500.0
+            pos = self.servo_mid + frac * (self.servo_hi - self.servo_mid)
         self.pub_servo.publish(Float64(data=pos))
 
     def on_motor(self, msg):
         self.last_motor_cmd = self.get_clock().now()
-        # 1500 -> 0 eRPM; 2000 -> +max; 1000 -> -max
+        # 1500 -> 0 eRPM; motor_sign maps positive PWM to physical forward.
         frac = self._clamp((msg.data - 1500) / 500.0, -1.0, 1.0)
-        erpm = frac * self.max_erpm
+        erpm = frac * self.max_erpm * self.motor_sign
         self.pub_speed.publish(Float64(data=erpm))
 
     def watchdog(self):
@@ -91,8 +102,13 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
-        node.pub_speed.publish(Float64(data=0.0))   # stop motor on exit
-        rclpy.shutdown()
+        # stop motor on exit, but only if the context is still valid
+        if rclpy.ok():
+            try:
+                node.pub_speed.publish(Float64(data=0.0))
+            except Exception:
+                pass
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

@@ -3,9 +3,9 @@
 # See: implementation_guide.md Phase 1 for measurement procedures
 
 vehicle:
-  wheelbase: 0.XXX  # meters (MEASURE: front wheel center to rear wheel center)
-  track_width: 0.XXX  # meters (MEASURE: left wheel to right wheel)
-  mass: 2.0  # kg estimate
+  wheelbase: 0.33  # meters (measured: front wheel center to rear wheel center)
+  track_width: 0.24  # meters (measured: left wheel center to right wheel center)
+  mass: 3.6  # kg estimate from component masses; weigh complete car when possible
 
 # ============================================================================
 # STEERING CONFIGURATION
@@ -15,11 +15,12 @@ steering:
   pwm_center: 1500  # µs (neutral/center position)
   pwm_left_max: 1000  # µs (full left)
   pwm_right_max: 2000  # µs (full right)
+  servo_center_command: 0.55  # calibrated midpoint; adjusted during floor tests
 
   # From servo_test.py: measure with phone level app
-  angle_left_max: XXX  # degrees (at PWM 1000)
-  angle_right_max: XXX  # degrees (at PWM 2000)
-  angle_center: 0  # degrees (at PWM 1500)
+  angle_left_max: 30  # degrees (approx; at PWM 1000)
+  angle_right_max: 25  # degrees (approx; at PWM 2000)
+  angle_center: 0  # degrees approx; servo_center_command 0.55 drove straight on floor
 
   # From slow-motion video: measure response time
   servo_tau: 0.05  # seconds (1st-order lag time constant, typically 0.02-0.1)
@@ -37,8 +38,8 @@ throttle:
   pwm_max_fwd: 2000  # µs (full forward)
 
   # From throttle_test.py at different levels
-  max_velocity: X.XX  # m/s (at 100% throttle, steady state)
-  max_acceleration: X.XX  # m/s² (initial acceleration from 0% to 100%)
+  max_velocity: 0.57  # m/s (100% PWM, capped at 0.5 m/s during 6 m floor test)
+  max_acceleration: 0.61  # m/s² (100% PWM, capped at 0.5 m/s during 6 m floor test)
 
   # From coast-down test: set throttle to 0, measure deceleration
   friction_coefficient: -X.XX  # m/s² (negative = deceleration)
@@ -52,7 +53,7 @@ throttle:
 # Validate with kinematics_test.py - drive in circles, measure turning radius
 # ============================================================================
 kinematics:
-  wheelbase: 0.XXX  # should match vehicle.wheelbase
+  wheelbase: 0.33  # should match vehicle.wheelbase
   steering_gain_correction: 1.0  # adjust if kinematic error >10%
   # Formula: R = L / tan(steering_angle)
   # If measured_radius >> predicted_radius, increase this factor
@@ -63,8 +64,8 @@ kinematics:
 # Correction = ground_truth / reported_distance
 # ============================================================================
 odometry:
-  distance_correction_factor: X.XXX  # apply to wheel encoder distance
-  velocity_correction_factor: X.XXX  # apply to computed velocity
+  distance_correction_factor: 1.109  # avg of matching 0.55-center runs: 2.42/2.181 and 2.42/2.185
+  velocity_correction_factor: 1.109  # same scale until velocity-specific test
 
 # ============================================================================
 # SENSOR CONFIGURATION
@@ -72,20 +73,21 @@ odometry:
 sensors:
   lidar:
     model: "Hokuyo 10LX"
-    frequency: 25  # Hz (typical for Hokuyo 10LX)
+    frequency: 40  # Hz (measured ~39.8 Hz on this UST-10LX)
     range_min: 0.0  # meters
     range_max: 30.0  # meters
 
-    # From lidar_noise_test.py: position at known distances
-    noise_std_at_1m: 0.XXX  # meters (typical: 0.03-0.05)
-    noise_std_at_5m: 0.XXX  # meters (increases with distance)
-    noise_std_at_10m: 0.XXX  # meters
+    # From lidar_noise_test.py: position at known distances (measured on UST-10LX)
+    noise_std_at_1m: 0.0032  # meters (measured; mean 1.036 m)
+    noise_std_at_2m: 0.0042  # meters (measured; mean 2.006 m)
+    noise_std_at_5m: 0.0054  # meters (measured; mean 4.757 m)
+    noise_std_at_10m: 0.0080  # meters (predicted from fit; 10 m not measured)
 
-    # Linear model: noise_std = a + b * distance
-    noise_std_coefficient_a: 0.XXX  # intercept (noise at 0m)
-    noise_std_coefficient_b: 0.XXX  # slope (noise per meter)
+    # Linear model: noise_std = a + b * distance  (fit over 1/2/5 m)
+    noise_std_coefficient_a: 0.0029  # intercept (noise at 0 m)
+    noise_std_coefficient_b: 0.00052  # slope (noise per meter)
 
-    outlier_rate: X.XX  # percent (% of NaN/invalid readings)
+    outlier_rate: 0.3  # percent (0.1-0.5% across 1/2/5 m)
 
     # Mounting offsets from rear axle center
     x_offset: 0.XXX  # meters (forward)
@@ -93,12 +95,14 @@ sensors:
     z_offset: 0.15  # meters (height, typical)
 
   imu:
-    # From imu_calib.py: stationary for 1 minute
-    gyro_bias: [X.XXX, X.XXX, X.XXX]  # rad/s (X, Y, Z axes)
-    gyro_noise_std: X.XXX  # rad/s (should be <0.1 rad/s)
+    # From imu_calib.py: stationary for 1 minute (VESC 6 MkVI onboard IMU / BMI160)
+    gyro_bias: [-0.000346, -0.008216, -0.005997]  # rad/s (X, Y, Z axes) = [-0.02, -0.47, -0.34] deg/s
+    gyro_noise_std: 0.004072  # rad/s (~0.23 deg/s) — well under 0.1 rad/s target
 
-    accel_bias: [X.XXX, X.XXX, X.XXX]  # m/s² (Z should be ~9.81 for gravity)
-    accel_noise_std: X.XXX  # m/s²
+    accel_bias: [0.2539, 0.7187, 10.4849]  # m/s² (Z reads 10.48 vs 9.81 -> ~6.9% scale high)
+    accel_noise_std: 0.0273  # m/s²
+    # NOTE: |accel| = 10.51 m/s² at rest vs 9.81 expected -> apply scale ~0.933 if using raw accel.
+    # X/Y ~0.76 m/s² suggests ~4 deg mount tilt or the car was not perfectly level.
 
     mounting:
       x_offset: 0.0  # meters
@@ -121,11 +125,11 @@ sensors:
 # Target: <100ms total (ideally 50-80ms)
 # ============================================================================
 latency:
-  lidar_frequency_hz: 25
-  lidar_period_ms: 40  # = 1000 / 25
+  lidar_frequency_hz: 40
+  lidar_period_ms: 25  # = 1000 / 40
 
   # Profile with ROS timestamps
-  lidar_to_slam_ms: XXX
+  lidar_to_slam_ms: 11  # nearest prior /scan -> /odom timestamp, 15 s sample
   slam_to_policy_ms: XXX
   policy_to_motor_ms: XXX
 

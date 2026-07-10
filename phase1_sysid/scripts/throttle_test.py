@@ -11,12 +11,17 @@ from nav_msgs.msg import Odometry
 import numpy as np
 import time
 import sys
+import argparse
 
 class ThrottleTest(Node):
-    def __init__(self):
+    def __init__(self, levels, duration, run_coast_down, odom_topic):
         super().__init__('throttle_test')
         self.pub_throttle = self.create_publisher(UInt16, '/motor/command', 10)
-        self.sub_odom = self.create_subscription(Odometry, '/odometry/filtered', self.odom_callback, 10)
+        self.sub_odom = self.create_subscription(Odometry, odom_topic, self.odom_callback, 10)
+        self.levels = levels
+        self.duration = duration
+        self.run_coast_down = run_coast_down
+        self.odom_topic = odom_topic
 
         self.velocities = []
         self.times = []
@@ -25,8 +30,10 @@ class ThrottleTest(Node):
         self.get_logger().info("=" * 60)
         self.get_logger().info("THROTTLE RESPONSE TEST")
         self.get_logger().info("=" * 60)
-        self.get_logger().info("Will test throttle levels: 25%, 50%, 75%, 100%")
-        self.get_logger().info("Duration per test: 5 seconds")
+        self.get_logger().info(f"Will test throttle levels: {self.levels}")
+        self.get_logger().info(f"Duration per test: {self.duration} seconds")
+        self.get_logger().info(f"Coast-down test: {'enabled' if self.run_coast_down else 'disabled'}")
+        self.get_logger().info(f"Odometry topic: {self.odom_topic}")
         self.get_logger().info("\nEnsure clear track! Car will accelerate.\n")
 
     def odom_callback(self, msg):
@@ -140,8 +147,27 @@ class ThrottleTest(Node):
             print(f"  friction_coefficient: {friction_accel:.2f}  # negative = deceleration")
 
 if __name__ == '__main__':
-    rclpy.init()
-    node = ThrottleTest()
+    parser = argparse.ArgumentParser(description='Throttle response test')
+    parser.add_argument(
+        '--levels', type=float, nargs='+', default=[25, 50, 75, 100],
+        help='Throttle percentages to test, e.g. --levels 10 20 30')
+    parser.add_argument(
+        '--duration', type=float, default=5.0,
+        help='Seconds per throttle level')
+    parser.add_argument(
+        '--skip-coast-down', action='store_true',
+        help='Skip the full-throttle coast-down test')
+    parser.add_argument(
+        '--odom-topic', default='/odometry/filtered',
+        help='Odometry topic to read, e.g. --odom-topic /odom')
+    args, ros_args = parser.parse_known_args()
+
+    rclpy.init(args=ros_args)
+    node = ThrottleTest(
+        levels=args.levels,
+        duration=args.duration,
+        run_coast_down=not args.skip_coast_down,
+        odom_topic=args.odom_topic)
 
     print("\nWaiting for first odometry message...")
     _wait_start = time.time()
@@ -158,12 +184,13 @@ if __name__ == '__main__':
 
     try:
         # Test at different throttle levels
-        for pct in [25, 50, 75, 100]:
-            node.test_throttle_level(pct, duration=5)
+        for pct in node.levels:
+            node.test_throttle_level(pct, duration=node.duration)
             time.sleep(2)  # Rest between tests
 
         # Coast-down test
-        node.test_coast_down()
+        if node.run_coast_down:
+            node.test_coast_down()
 
     except KeyboardInterrupt:
         node.get_logger().info("Test interrupted by user")
