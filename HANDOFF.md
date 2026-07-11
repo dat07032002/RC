@@ -54,19 +54,20 @@ so scripts have exclusive control. Verified mapping + watchdog work.
 ## Phase 1 sysid progress (results in `phase1_sysid/config/vehicle_params.yaml`)
 - **Vehicle geometry — DONE**: wheelbase `0.33 m`, track width `0.24 m`, mass estimate `3.6 kg`
   from component estimates until complete car can be weighed.
-- **IMU — DONE**: gyro_bias [-0.000346,-0.008216,-0.005997] rad/s, gyro_noise 0.004072;
+- **VESC BMI160 static calibration — DONE; production IMU — PENDING BNO086**:
+  gyro_bias [-0.000346,-0.008216,-0.005997] rad/s, gyro_noise 0.004072;
   accel_bias [0.2539,0.7187,10.4849] (Z reads ~7% high), accel_noise 0.0273.
 - **LiDAR noise — DONE**: 1m σ0.0032, 2m σ0.0042, 5m σ0.0054; model σ=0.0029+0.00052·d;
   outliers ~0.3%. (10m skipped — unneeded indoors.) LiDAR freq corrected 25→40 Hz.
-- **Steering — PARTIAL DONE**: wiring fixed by user; servo moves. Approx limits: left `30 deg`,
-  right `25 deg`. Default `0.50` and trial `0.57` did not drive straight; `0.55` drove straight on
-  the floor. Servo response delay/rate still not measured.
-- **Throttle — PARTIAL DONE**: motor sign fixed; physical forward is now PWM 2000. Low-speed floor
-  test with cap gave max velocity `0.57 m/s`, acceleration `0.61 m/s^2`. More space needed for
-  coast-down friction and better max-speed curve.
-- **Odometry — DONE enough for sim start**: saved factor `1.035` from the only run the user
-  judged perfectly straight: `2.51 m / 2.424 m = 1.035`. Other 0.55-center runs
-  (`2.42 m / 2.181 m = 1.110`, `2.42 m / 2.185 m = 1.108`) are documented but not used.
+- **Steering — DONE for simulation**: center `0.55`; full-lock circle measurements give
+  left/right limits `24.93°/19.44°`, radii `0.710/0.935 m`, and asymmetric gains
+  `-0.9194/-0.8842`. Slew/settle measured; absolute command delay remains optional.
+- **Throttle — DONE provisionally**: controller cap validated near `2.0 m/s`, peak `2.12 m/s`.
+  Accepted acceleration estimate `3.5 m/s²` with `[2.5,4.5]` randomization because a hard
+  launch produced wheel slip. Coast-down friction remains open.
+- **Odometry — DONE**: tachometer-delta propagation replaces irregular speed integration;
+  calibrated `speed_to_erpm_gain=4529.41`, correction factor `1.0`, and physical/reported
+  straight distance validated.
 - **Latency — PARTIAL DONE**: corrected scan-to-odom pairing. 15 s sample: mean `11.33 ms`,
   median `7.60 ms`, min `0.02 ms`, max `29.97 ms`, LiDAR frequency `39.9 Hz`.
   Policy-to-motor and motor response latency remain open.
@@ -98,6 +99,9 @@ so scripts have exclusive control. Verified mapping + watchdog work.
   ~44 Hz; a balanced schedule produced ~38.6 Hz IMU but only ~3.7 Hz motor state with
   gaps up to 1.18 s. Restored motor-priority polling and selected the in-hand SparkFun
   BNO086 over Jetson I²C as the primary production IMU. BMI160 remains backup/diagnostic.
+- **Final clean fallback check**: motor-priority polling measured ~8.7 Hz VESC state and
+  ~6.0 Hz BMI160, with a worst observed gap of ~1.12 s. Tachometer-delta odometry remains
+  distance-correct across gaps; these rates are diagnostic, not sufficient for the EKF.
 
 ## Next tests
 1. Coast-down friction with the dedicated zero-current/freewheel script and long runout.
