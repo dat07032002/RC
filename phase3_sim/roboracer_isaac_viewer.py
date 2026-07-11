@@ -132,7 +132,8 @@ class ViewerEnvCfg(DirectRLEnvCfg):
 
     # measured dynamics (matches training task defaults)
     wheelbase: float = 0.33
-    steer_max_deg: float = 25.0
+    steer_left_max_deg: float = 24.93
+    steer_right_max_deg: float = 19.44
     steer_tau_s: float = 0.05
     v_max: float = 0.57
     a_max: float = 0.61
@@ -152,7 +153,9 @@ class ViewerEnv(DirectRLEnv):
         self.walls = torch.as_tensor(MAZE_WALLS, device=dev).unsqueeze(0).repeat(n, 1, 1)
         fov = math.radians(cfg.lidar_fov_deg)
         self.ray_angles = torch.linspace(-fov / 2, fov / 2, cfg.num_rays, device=dev)
-        self.steer_max_rad = math.radians(cfg.steer_max_deg)
+        self.steer_left_max_rad = math.radians(cfg.steer_left_max_deg)
+        self.steer_right_max_rad = math.radians(cfg.steer_right_max_deg)
+        self.steer_max_rad = max(self.steer_left_max_rad, self.steer_right_max_rad)
         self.crash_count = 0
 
     def _setup_scene(self):
@@ -197,7 +200,12 @@ class ViewerEnv(DirectRLEnv):
         self._act = actions.clamp(-1.0, 1.0)
 
     def _apply_action(self):
-        steer_cmd = self._act[:, 0] * self.steer_max_rad
+        steer_action = self._act[:, 0]
+        steer_cmd = torch.where(
+            steer_action >= 0.0,
+            steer_action * self.steer_left_max_rad,
+            steer_action * self.steer_right_max_rad,
+        )
         throttle = (self._act[:, 1] + 1.0) / 2.0
         dt = self.cfg.sim.dt
         x, y, yaw, v, steer = self.car_state.unbind(dim=1)
@@ -240,7 +248,11 @@ class ViewerEnv(DirectRLEnv):
         obs = torch.cat(
             [rays / self.cfg.lidar_max_range,
              self.car_state[:, 3:4] / self.cfg.v_max,
-             self.car_state[:, 4:5] / self.steer_max_rad,
+             self.car_state[:, 4:5] / torch.where(
+                 self.car_state[:, 4:5] >= 0.0,
+                 self.steer_left_max_rad,
+                 self.steer_right_max_rad,
+             ),
              self._act],
             dim=1,
         )

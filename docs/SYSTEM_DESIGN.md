@@ -71,7 +71,7 @@ Slew limiter + VESC bridge (VESC closes speed/servo loops internally)
   physical testbed (fixed start/end points, track shape AND obstacles change
   between runs) means no reliable route/map exists at deployment. The policy
   follows the track from LiDAR; goal direction is guidance only.
-- Act: [v_target ≤ 2 m/s indoor cap, δ_target ∈ ±25°].
+- Act: [v_target ≤ 2 m/s indoor cap, δ_target ∈ −19.44° right / +24.93° left].
 
 ## 4. Safety layer (build + trust FIRST)
 
@@ -79,7 +79,8 @@ Standalone node, no RL deps, override authority ahead of the bridge.
 1. d_stop = v·τ_total + v²/(2·a_brake) + d_margin; τ_total 100 ms
    conservative, a_brake 1.5 m/s² (? — measure), d_margin 0.3 m; vs min raw
    scan in the steering-feasible cone.
-2. Arc-existence check within ±25° + steer-rate limit; no free arc → stop.
+2. Arc-existence check within the asymmetric measured steering limits + steer-rate limit;
+   no free arc → stop.
 3. Envelope governor: speed ceiling shrinks with uncertainty, proximity,
    scan staleness.
 4. Watchdogs: bridge 0.5 s motor watchdog (exists) + scan-age >100 ms →

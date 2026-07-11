@@ -1,8 +1,8 @@
-# F1TENTH controller, VESC IMU, and tachometer odometry fixes
+# F1TENTH controller, VESC IMU, telemetry, and asymmetric odometry fixes
 # Captured from ~/f1tenth_ws/src/f1tenth_system on 2026-07-11.
 # Apply from the f1tenth_system repository root with:
 #   git apply /path/to/RC/phase1_sysid/patches/controller_odom_2026-07-11.patch
-# Then rebuild the affected packages.
+# Then rebuild vesc_driver and vesc_ackermann.
 
 diff --git a/f1tenth_stack/config/joy_teleop.yaml b/f1tenth_stack/config/joy_teleop.yaml
 index 795cbd6..ce43fdc 100755
@@ -41,10 +41,10 @@ index 795cbd6..ce43fdc 100755
          drive-steering_angle:
            axis: 2
 diff --git a/f1tenth_stack/config/vesc.yaml b/f1tenth_stack/config/vesc.yaml
-index 5531a64..52c217b 100755
+index 5531a64..cb8e70a 100755
 --- a/f1tenth_stack/config/vesc.yaml
 +++ b/f1tenth_stack/config/vesc.yaml
-@@ -2,12 +2,16 @@
+@@ -2,12 +2,21 @@
    # general parameters shared by all vesc-related nodes
    ros__parameters:
      # erpm (electrical rpm) = speed_to_erpm_gain * speed (meters / second) + speed_to_erpm_offset
@@ -58,12 +58,17 @@ index 5531a64..52c217b 100755
      # servo value (0 to 1) =  steering_angle_to_servo_gain * steering angle (radians) + steering_angle_to_servo_offset
      steering_angle_to_servo_gain: -1.2135
 -    steering_angle_to_servo_offset: 0.5304
++    # Direction-specific gains from measured full-lock circles:
++    # left R=0.710 m -> 24.93 deg at servo 0.15;
++    # right R=0.935 m -> 19.44 deg at servo 0.85.
++    steering_angle_to_servo_gain_left: -0.9194
++    steering_angle_to_servo_gain_right: -0.8842
 +    # Floor-calibrated straight-ahead servo position (2026-07-11).
 +    steering_angle_to_servo_offset: 0.55
  
      port: /dev/sensors/vesc
      duty_cycle_min: 0.0
-@@ -34,8 +38,8 @@ vesc_to_odom_node:
+@@ -34,8 +43,8 @@ vesc_to_odom_node:
      # publish odom to base link tf
      publish_tf: true
      use_servo_cmd_to_calc_angular_velocity: true
@@ -74,7 +79,7 @@ index 5531a64..52c217b 100755
  
  # No longer needed, all parameters are shared
  # vesc_driver:
-@@ -53,4 +57,4 @@ throttle_interpolator:
+@@ -53,4 +62,4 @@ throttle_interpolator:
      throttle_smoother_rate: 75.0 # messages/sec
      # servo smoother - limits rotation speed and smooths anything above limit
      max_servo_speed: 3.2 # radians/second
@@ -104,11 +109,39 @@ index 239b731..e4333d6 100755
 \ No newline at end of file
 +    return ld
 
+diff --git a/vesc/vesc_ackermann/include/vesc_ackermann/ackermann_to_vesc.hpp b/vesc/vesc_ackermann/include/vesc_ackermann/ackermann_to_vesc.hpp
+index b646c36..99d758b 100644
+--- a/vesc/vesc_ackermann/include/vesc_ackermann/ackermann_to_vesc.hpp
++++ b/vesc/vesc_ackermann/include/vesc_ackermann/ackermann_to_vesc.hpp
+@@ -50,7 +50,8 @@ private:
+   // ROS parameters
+   // conversion gain and offset
+   double speed_to_erpm_gain_, speed_to_erpm_offset_;
+-  double steering_to_servo_gain_, steering_to_servo_offset_;
++  double steering_to_servo_gain_, steering_to_servo_gain_left_;
++  double steering_to_servo_gain_right_, steering_to_servo_offset_;
+ 
+   /** @todo consider also providing an interpolated look-up table conversion */
+ 
+diff --git a/vesc/vesc_ackermann/include/vesc_ackermann/vesc_to_odom.hpp b/vesc/vesc_ackermann/include/vesc_ackermann/vesc_to_odom.hpp
+index 916f2ef..4788c20 100644
+--- a/vesc/vesc_ackermann/include/vesc_ackermann/vesc_to_odom.hpp
++++ b/vesc/vesc_ackermann/include/vesc_ackermann/vesc_to_odom.hpp
+@@ -60,7 +60,8 @@ private:
+   bool use_servo_cmd_;
+   // conversion gain and offset
+   double speed_to_erpm_gain_, speed_to_erpm_offset_;
+-  double steering_to_servo_gain_, steering_to_servo_offset_;
++  double steering_to_servo_gain_, steering_to_servo_gain_left_;
++  double steering_to_servo_gain_right_, steering_to_servo_offset_;
+   double wheelbase_;
+   bool publish_tf_;
+ 
 diff --git a/vesc/vesc_ackermann/src/ackermann_to_vesc.cpp b/vesc/vesc_ackermann/src/ackermann_to_vesc.cpp
-index e26c4f1..ef3712f 100644
+index e26c4f1..bedde97 100644
 --- a/vesc/vesc_ackermann/src/ackermann_to_vesc.cpp
 +++ b/vesc/vesc_ackermann/src/ackermann_to_vesc.cpp
-@@ -48,10 +48,10 @@ AckermannToVesc::AckermannToVesc(const rclcpp::NodeOptions & options)
+@@ -48,10 +48,14 @@ AckermannToVesc::AckermannToVesc(const rclcpp::NodeOptions & options)
  : Node("ackermann_to_vesc_node", options)
  {
    // get conversion parameters
@@ -119,15 +152,30 @@ index e26c4f1..ef3712f 100644
 +  speed_to_erpm_gain_ = declare_parameter<double>("speed_to_erpm_gain");
 +  speed_to_erpm_offset_ = declare_parameter<double>("speed_to_erpm_offset");
 +  steering_to_servo_gain_ = declare_parameter<double>("steering_angle_to_servo_gain");
++  steering_to_servo_gain_left_ = declare_parameter<double>(
++    "steering_angle_to_servo_gain_left", steering_to_servo_gain_);
++  steering_to_servo_gain_right_ = declare_parameter<double>(
++    "steering_angle_to_servo_gain_right", steering_to_servo_gain_);
 +  steering_to_servo_offset_ = declare_parameter<double>("steering_angle_to_servo_offset");
  
    // create publishers to vesc electric-RPM (speed) and servo commands
    erpm_pub_ = create_publisher<Float64>("commands/motor/speed", 10);
+@@ -70,7 +74,9 @@ void AckermannToVesc::ackermannCmdCallback(const AckermannDriveStamped::SharedPt
+ 
+   // calc steering angle (servo)
+   Float64 servo_msg;
+-  servo_msg.data = steering_to_servo_gain_ * cmd->drive.steering_angle + steering_to_servo_offset_;
++  const double steering_gain = cmd->drive.steering_angle >= 0.0 ?
++    steering_to_servo_gain_left_ : steering_to_servo_gain_right_;
++  servo_msg.data = steering_gain * cmd->drive.steering_angle + steering_to_servo_offset_;
+ 
+   // publish
+   if (rclcpp::ok()) {
 diff --git a/vesc/vesc_ackermann/src/vesc_to_odom.cpp b/vesc/vesc_ackermann/src/vesc_to_odom.cpp
-index 1deef6c..04b957e 100644
+index 1deef6c..1002240 100644
 --- a/vesc/vesc_ackermann/src/vesc_to_odom.cpp
 +++ b/vesc/vesc_ackermann/src/vesc_to_odom.cpp
-@@ -59,13 +59,13 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
+@@ -59,13 +59,17 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
    declare_parameter("base_frame", base_frame_);
    declare_parameter("use_servo_cmd_to_calc_angular_velocity", use_servo_cmd_);
  
@@ -141,12 +189,16 @@ index 1deef6c..04b957e 100644
 -    steering_to_servo_offset_ = declare_parameter("steering_angle_to_servo_offset").get<double>();
 -    wheelbase_ = declare_parameter("wheelbase").get<double>();
 +    steering_to_servo_gain_ = declare_parameter<double>("steering_angle_to_servo_gain");
++    steering_to_servo_gain_left_ = declare_parameter<double>(
++      "steering_angle_to_servo_gain_left", steering_to_servo_gain_);
++    steering_to_servo_gain_right_ = declare_parameter<double>(
++      "steering_angle_to_servo_gain_right", steering_to_servo_gain_);
 +    steering_to_servo_offset_ = declare_parameter<double>("steering_angle_to_servo_offset");
 +    wheelbase_ = declare_parameter<double>("wheelbase");
    }
  
    declare_parameter("publish_tf", publish_tf_);
-@@ -83,7 +83,7 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
+@@ -83,7 +87,7 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
      "sensors/core", 10, std::bind(&VescToOdom::vescStateCallback, this, _1));
  
    if (use_servo_cmd_) {
@@ -155,7 +207,19 @@ index 1deef6c..04b957e 100644
        "sensors/servo_position_command", 10, std::bind(&VescToOdom::servoCmdCallback, this, _1));
    }
  }
-@@ -112,18 +112,22 @@ void VescToOdom::vescStateCallback(const VescStateStamped::SharedPtr state)
+@@ -102,8 +106,10 @@ void VescToOdom::vescStateCallback(const VescStateStamped::SharedPtr state)
+   }
+   double current_steering_angle(0.0), current_angular_velocity(0.0);
+   if (use_servo_cmd_) {
++    const double steering_gain = last_servo_cmd_->data <= steering_to_servo_offset_ ?
++      steering_to_servo_gain_left_ : steering_to_servo_gain_right_;
+     current_steering_angle =
+-      (last_servo_cmd_->data - steering_to_servo_offset_) / steering_to_servo_gain_;
++      (last_servo_cmd_->data - steering_to_servo_offset_) / steering_gain;
+     current_angular_velocity = current_speed * tan(current_steering_angle) / wheelbase_;
+   }
+ 
+@@ -112,18 +118,22 @@ void VescToOdom::vescStateCallback(const VescStateStamped::SharedPtr state)
      last_state_ = state;
    }
  
@@ -190,7 +254,7 @@ index 1deef6c..04b957e 100644
  
    // save state for next time
 diff --git a/vesc/vesc_driver/include/vesc_driver/vesc_driver.hpp b/vesc/vesc_driver/include/vesc_driver/vesc_driver.hpp
-index f879f72..f460066 100644
+index f879f72..8a4dae0 100644
 --- a/vesc/vesc_driver/include/vesc_driver/vesc_driver.hpp
 +++ b/vesc/vesc_driver/include/vesc_driver/vesc_driver.hpp
 @@ -33,6 +33,7 @@
@@ -209,6 +273,14 @@ index f879f72..f460066 100644
    rclcpp::SubscriptionBase::SharedPtr duty_cycle_sub_;
    rclcpp::SubscriptionBase::SharedPtr current_sub_;
    rclcpp::SubscriptionBase::SharedPtr brake_sub_;
+@@ -108,6 +110,7 @@ private:
+   driver_mode_t driver_mode_;           ///< driver state machine mode (state)
+   int fw_version_major_;                ///< firmware major version reported by vesc
+   int fw_version_minor_;                ///< firmware minor version reported by vesc
++  unsigned int telemetry_poll_count_;   ///< schedules state vs IMU serial requests
+ 
+   // ROS callbacks
+   void brakeCallback(const Float64::SharedPtr brake);
 diff --git a/vesc/vesc_driver/include/vesc_driver/vesc_interface.hpp b/vesc/vesc_driver/include/vesc_driver/vesc_interface.hpp
 index 63724a1..19c63f9 100644
 --- a/vesc/vesc_driver/include/vesc_driver/vesc_interface.hpp
@@ -280,7 +352,7 @@ index ef527ed..a1d5f7c 100644
    <depend>serial_driver</depend>
  
 diff --git a/vesc/vesc_driver/src/vesc_driver.cpp b/vesc/vesc_driver/src/vesc_driver.cpp
-index 5db7395..443fea1 100644
+index 5db7395..be21f61 100644
 --- a/vesc/vesc_driver/src/vesc_driver.cpp
 +++ b/vesc/vesc_driver/src/vesc_driver.cpp
 @@ -32,6 +32,7 @@
@@ -291,7 +363,17 @@ index 5db7395..443fea1 100644
  
  #include <cassert>
  #include <chrono>
-@@ -79,6 +80,9 @@ VescDriver::VescDriver(const rclcpp::NodeOptions & options)
+@@ -62,7 +63,8 @@ VescDriver::VescDriver(const rclcpp::NodeOptions & options)
+   servo_limit_(this, "servo", 0.0, 1.0),
+   driver_mode_(MODE_INITIALIZING),
+   fw_version_major_(-1),
+-  fw_version_minor_(-1)
++  fw_version_minor_(-1),
++  telemetry_poll_count_(0)
+ {
+   // get vesc serial port address
+   std::string port = declare_parameter<std::string>("port", "");
+@@ -79,6 +81,9 @@ VescDriver::VescDriver(const rclcpp::NodeOptions & options)
    // create vesc state (telemetry) publisher
    state_pub_ = create_publisher<VescStateStamped>("sensors/core", rclcpp::QoS{10});
  
@@ -301,18 +383,25 @@ index 5db7395..443fea1 100644
    // since vesc state does not include the servo position, publish the commanded
    // servo position as a "sensor"
    servo_sensor_pub_ = create_publisher<Float64>(
-@@ -141,8 +145,9 @@ void VescDriver::timerCallback()
+@@ -141,8 +146,15 @@ void VescDriver::timerCallback()
        driver_mode_ = MODE_OPERATING;
      }
    } else if (driver_mode_ == MODE_OPERATING) {
 -    // poll for vesc state (telemetry)
-+    // poll for vesc state (telemetry) and IMU data
-     vesc_.requestState();
-+    vesc_.requestImuData();
+-    vesc_.requestState();
++    // Issue only one serial request per 20 ms tick. Requesting both packets on
++    // every tick can backlog the 115200-baud link, producing duplicate bursts
++    // and multi-second gaps in state telemetry. Keep motor state at 40 Hz and
++    // the lower-priority onboard IMU at 10 Hz.
++    if ((telemetry_poll_count_++ % 5) == 4) {
++      vesc_.requestImuData();
++    } else {
++      vesc_.requestState();
++    }
    } else {
      // unknown mode, how did that happen?
      assert(false && "unknown driver mode");
-@@ -184,6 +189,38 @@ void VescDriver::vescPacketCallback(const std::shared_ptr<VescPacket const> & pa
+@@ -184,6 +196,38 @@ void VescDriver::vescPacketCallback(const std::shared_ptr<VescPacket const> & pa
      state_msg.state.avg_vq = values->avg_vq();
  
      state_pub_->publish(state_msg);

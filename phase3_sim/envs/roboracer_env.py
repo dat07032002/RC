@@ -72,11 +72,9 @@ def load_vehicle_params(path: str) -> dict:
     out = {
         "wheelbase": _f(raw, "vehicle.wheelbase", 0.33),
         "track_width": _f(raw, "vehicle.track_width", 0.24),
-        # symmetric steering limit = the weaker side (measured L30/R25, approx)
-        "steer_max_deg": min(
-            _f(raw, "steering.angle_left_max", 30.0),
-            _f(raw, "steering.angle_right_max", 25.0),
-        ),
+        # Full-lock circle measurements show meaningful left/right asymmetry.
+        "steer_left_max_deg": _f(raw, "steering.angle_left_max", 24.93),
+        "steer_right_max_deg": _f(raw, "steering.angle_right_max", 19.44),
         "steer_tau_s": _f(raw, "steering.servo_tau", 0.05),  # provisional until stand test
         # NOTE: measured on 6 m floor with speed cap — true max is higher (open test)
         "v_max": _f(raw, "throttle.max_velocity", 0.57),
@@ -124,7 +122,9 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
 
     # --- measured dynamics (Phase 1) ---
     wheelbase: float = VEHICLE["wheelbase"]
-    steer_max_deg: float = VEHICLE["steer_max_deg"]
+    steer_left_max_deg: float = VEHICLE["steer_left_max_deg"]
+    steer_right_max_deg: float = VEHICLE["steer_right_max_deg"]
+    steer_max_deg: float = max(steer_left_max_deg, steer_right_max_deg)
     steer_tau_s: float = VEHICLE["steer_tau_s"]
     v_max: float = VEHICLE["v_max"]
     a_max: float = VEHICLE["a_max"]
@@ -289,6 +289,8 @@ class RoboracerEnv(DirectRLEnv):
         fov = math.radians(cfg.lidar_fov_deg)
         self.ray_angles = torch.linspace(-fov / 2, fov / 2, cfg.num_rays, device=dev)
         self.steer_max_rad = math.radians(cfg.steer_max_deg)
+        self.steer_left_max_rad = math.radians(cfg.steer_left_max_deg)
+        self.steer_right_max_rad = math.radians(cfg.steer_right_max_deg)
 
     # ---- scene ----------------------------------------------------------
     def _setup_scene(self):
@@ -359,7 +361,12 @@ class RoboracerEnv(DirectRLEnv):
         self._act = self.action_buf[0]
 
     def _apply_action(self):
-        steer_cmd = self._act[:, 0] * self.steer_max_rad
+        steer_action = self._act[:, 0]
+        steer_cmd = torch.where(
+            steer_action >= 0.0,
+            steer_action * self.steer_left_max_rad,
+            steer_action * self.steer_right_max_rad,
+        )
         throttle = (self._act[:, 1] + 1.0) / 2.0  # [-1,1] -> [0,1]
 
         dt = self.cfg.sim.dt
@@ -426,7 +433,11 @@ class RoboracerEnv(DirectRLEnv):
             [
                 rays / self.cfg.lidar_max_range,
                 self.car_state[:, 3:4] / self.cfg.v_max,
-                self.car_state[:, 4:5] / self.steer_max_rad,
+                self.car_state[:, 4:5] / torch.where(
+                    self.car_state[:, 4:5] >= 0.0,
+                    self.steer_left_max_rad,
+                    self.steer_right_max_rad,
+                ),
                 self.prev_actions,
                 (dist / self.cfg.lidar_max_range).clamp(max=2.0),
                 torch.sin(bearing).unsqueeze(1),

@@ -85,10 +85,19 @@ so scripts have exclusive control. Verified mapping + watchdog work.
   live VESC config corrected from `0.25` to measured `0.33 m`.
 - Reproducible live-workspace changes are saved in
   `phase1_sysid/patches/controller_odom_2026-07-11.patch`.
+- **Acceleration provisional**: accepted engineering estimate `3.5 m/s²`; use
+  `2.5–4.5 m/s²` domain randomization. A hard launch produced substantial wheel slip, so
+  wheel odometry could not provide chassis acceleration.
+- **Turning radii measured**: full-left outer/inner diameters `1.66/1.18 m` give
+  rear-axle radius `0.710 m` and `24.93°`; full-right `2.11/1.63 m` gives `0.935 m`
+  and `19.44°`. Both diameter differences independently confirm the `0.24 m` track.
+- **Asymmetric steering applied**: left/right servo gains are `-0.9194/-0.8842`
+  servo units/radian. ROS command conversion, odometry, analytic simulation, PhysX task,
+  USD joint limits, and viewer now preserve the measured asymmetry.
 
 ## Next tests
 1. Coast-down friction with the dedicated zero-current/freewheel script and long runout.
-2. Turning-radius validation.
+2. Optional external-reference acceleration measurement to replace the estimate.
 3. Optional improved servo video with command time-zero to replace the placeholder
    absolute response delay.
 

@@ -18,9 +18,11 @@ steering:
   servo_center_command: 0.55  # calibrated midpoint; adjusted during floor tests
 
   # From servo_test.py: measure with phone level app
-  angle_left_max: 30  # degrees (approx; at PWM 1000)
-  angle_right_max: 25  # degrees (approx; at PWM 2000)
+  angle_left_max: 24.93  # degrees; measured from R=0.710 m full-lock circle
+  angle_right_max: 19.44  # degrees; measured from R=0.935 m full-lock circle
   angle_center: 0  # degrees approx; servo_center_command 0.55 drove straight on floor
+  servo_gain_left: -0.9194  # servo units/rad: (0.15-0.55)/rad(24.93)
+  servo_gain_right: -0.8842  # servo units/rad: (0.85-0.55)/rad(-19.44)
 
   # From slow-motion video (240fps, on stand): rightwheel.mp4 + leftwheel.mp4
   # Analyzed via frame-diff + correlation-to-pre/post. Full-range slew ~0.18-0.20s;
@@ -45,7 +47,9 @@ throttle:
 
   # From throttle_test.py at different levels
   max_velocity: 2.12  # m/s peak; controller capped to 2.0 m/s, test7_controller_1616
-  max_acceleration: 0.61  # m/s² (100% PWM, capped at 0.5 m/s during 6 m floor test)
+  # Provisional engineering estimate accepted after the hard-launch test showed
+  # wheel slip (wheel odometry cannot measure chassis acceleration under slip).
+  max_acceleration: 3.5  # m/s²; use 2.5-4.5 m/s² domain randomization until external measurement
 
   # From coast-down test: set throttle to 0, measure deceleration
   friction_coefficient: -X.XX  # m/s² (negative = deceleration)
@@ -60,7 +64,9 @@ throttle:
 # ============================================================================
 kinematics:
   wheelbase: 0.33  # should match vehicle.wheelbase
-  steering_gain_correction: 1.0  # adjust if kinematic error >10%
+  turning_radius_left: 0.710  # m, rear-axle center; outer/inner diameters 1.66/1.18 m
+  turning_radius_right: 0.935  # m, rear-axle center; outer/inner diameters 2.11/1.63 m
+  steering_gain_correction: 1.0  # direction-specific servo gains applied above
   # Formula: R = L / tan(steering_angle)
   # If measured_radius >> predicted_radius, increase this factor
 
