@@ -34,7 +34,7 @@ CAR_USD = os.environ.get(
     str(Path.home() / "roboracer_project/phase3_sim/assets/roboracer_car.usd"),
 )
 
-WHEEL_RADIUS = 0.0425  # [P] keep in sync with build_car_usd.py until measured
+WHEEL_RADIUS = 0.045  # measured 2026-07-11; keep in sync with build_car_usd.py
 
 ROBORACER_CAR_CFG = ArticulationCfg(
     prim_path="/World/envs/env_.*/Robot",

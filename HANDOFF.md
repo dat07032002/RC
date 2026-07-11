@@ -71,12 +71,26 @@ so scripts have exclusive control. Verified mapping + watchdog work.
   median `7.60 ms`, min `0.02 ms`, max `29.97 ms`, LiDAR frequency `39.9 Hz`.
   Policy-to-motor and motor response latency remain open.
 
+## 2026-07-11 controller + straight-line test
+- **Controller pipeline fixed**: 8BitDo deadman is button index `6`, throttle is axis `1`,
+  and full stick is software-capped at `2.0 m/s`.
+- **Mux wiring fixed**: this ROS 2 `ackermann_mux` publishes `ackermann_drive_out`; the
+  bringup now remaps it to `ackermann_cmd` for `ackermann_to_vesc_node`.
+- **Steering validated straight**: teleop neutral now uses servo position `0.55`.
+- **Test 7 complete**: 4 m release line, 4.25 m total physical travel, peak measured speed
+  `2.12 m/s`, approximately 0.25 m stopping overshoot, and no VESC fault.
+- **Odometry fixed and validated**: position propagation now uses VESC tachometer deltas
+  rather than zero-order speed integration across irregular telemetry. Calibrated
+  `speed_to_erpm_gain = 4529.41`; physical and reported distance agree. Wheelbase in the
+  live VESC config corrected from `0.25` to measured `0.33 m`.
+- Reproducible live-workspace changes are saved in
+  `phase1_sysid/patches/controller_odom_2026-07-11.patch`.
+
 ## Next tests
-1. Servo response delay/rate on stand, or use conservative defaults (`servo_tau 0.05 s`,
-   `servo_response_delay ~100 ms`) for early Isaac Lab.
-2. Coast-down friction and throttle response curve with more floor space.
-3. LiDAR mount offsets from rear axle center.
-4. Turning-radius validation once straight driving is repeatable.
+1. Coast-down friction with the dedicated zero-current/freewheel script and long runout.
+2. Turning-radius validation.
+3. Optional improved servo video with command time-zero to replace the placeholder
+   absolute response delay.
 
 ## Operational gotchas
 - Only ONE of {VESC Tool, ROS stack} may hold `/dev/ttyACM0` at a time.

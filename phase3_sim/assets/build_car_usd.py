@@ -37,9 +37,9 @@ TRACK = 0.24              # measured
 STEER_LIMIT_DEG = 25.0    # measured (weaker side)
 MASS_TOTAL = 3.6          # measured estimate
 
-WHEEL_R = 0.0425          # [P] wheel radius (m) — measure tomorrow
-WHEEL_W = 0.035           # [P] wheel width (m)
-CHASSIS = (0.40, 0.17, 0.09)   # [P] chassis LxWxH (m)
+WHEEL_R = 0.045           # measured on-car 2026-07-11 (loaded rally tire w/ foam)
+WHEEL_W = 0.028           # researched (Traxxas rally tire section width ~28 mm)
+CHASSIS = (0.35, 0.16, 0.09)   # inertial mass-envelope proxy (NOT body shell dims)
 M_WHEEL = 0.12            # [P] per-wheel mass (kg)
 M_KNUCKLE = 0.05          # [P]
 M_CHASSIS = MASS_TOTAL - 4 * M_WHEEL - 2 * M_KNUCKLE  # 3.02 kg

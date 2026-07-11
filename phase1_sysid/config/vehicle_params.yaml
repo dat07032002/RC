@@ -22,11 +22,17 @@ steering:
   angle_right_max: 25  # degrees (approx; at PWM 2000)
   angle_center: 0  # degrees approx; servo_center_command 0.55 drove straight on floor
 
-  # From slow-motion video: measure response time
-  servo_tau: 0.05  # seconds (1st-order lag time constant, typically 0.02-0.1)
-  servo_response_delay: XXX  # ms (time to 90% of final angle)
+  # From slow-motion video (240fps, on stand): rightwheel.mp4 + leftwheel.mp4
+  # Analyzed via frame-diff + correlation-to-pre/post. Full-range slew ~0.18-0.20s;
+  # complete settle ~0.4s. Left step shows overshoot -> servo is underdamped.
+  # Absolute deg & command->motion lag NOT measurable from these side-view clips
+  # (steering rotates about a near-vertical axis => foreshortening, no in-plane spin;
+  #  wheel-only framing => no command time-zero). Re-shoot overhead + marker + t0 to get them.
+  servo_tau: 0.07  # seconds (1st-order equiv; ~95% in ~0.2s, slightly underdamped)
+  servo_response_delay: 100  # ms (PLACEHOLDER, unmeasured - no time-zero in clips)
+  servo_settle_time: 0.4  # seconds (full settle incl. overshoot, measured)
 
-  max_steering_rate: XXX  # degrees/sec (= max_steering_angle / servo_response_delay)
+  max_steering_rate: 150  # degrees/sec (~25-30deg over ~0.19s measured slew)
 
 # ============================================================================
 # THROTTLE CONFIGURATION
@@ -38,7 +44,7 @@ throttle:
   pwm_max_fwd: 2000  # µs (full forward)
 
   # From throttle_test.py at different levels
-  max_velocity: 0.57  # m/s (100% PWM, capped at 0.5 m/s during 6 m floor test)
+  max_velocity: 2.12  # m/s peak; controller capped to 2.0 m/s, test7_controller_1616
   max_acceleration: 0.61  # m/s² (100% PWM, capped at 0.5 m/s during 6 m floor test)
 
   # From coast-down test: set throttle to 0, measure deceleration
@@ -64,8 +70,11 @@ kinematics:
 # Correction = ground_truth / reported_distance
 # ============================================================================
 odometry:
-  distance_correction_factor: 1.035  # trusted straight run: 2.51 m physical / 2.424 m odom
-  velocity_correction_factor: 1.035  # same scale until velocity-specific test
+  # vesc_to_odom now propagates from VESC tachometer deltas, so irregular
+  # telemetry cannot turn a late high-speed sample into a false position jump.
+  speed_to_erpm_gain: 4529.41  # calibrated: 1925 tach counts / 4.25 m, with 6 counts/e-rev
+  distance_correction_factor: 1.0  # validated against a physical straight run after fix
+  velocity_correction_factor: 1.0  # shared calibrated eRPM conversion
 
 # ============================================================================
 # SENSOR CONFIGURATION
@@ -89,10 +98,13 @@ sensors:
 
     outlier_rate: 0.3  # percent (0.1-0.5% across 1/2/5 m)
 
-    # Mounting offsets from rear axle center
-    x_offset: 0.XXX  # meters (forward)
-    y_offset: 0.0  # meters (lateral)
-    z_offset: 0.15  # meters (height, typical)
+    # Mounting offsets from rear axle center (REP-103: +x fwd, +y left, +z up).
+    # Measured by tape 2026-07-11. z is ground -> scan-window center.
+    # base_link -> laser static transform. Sanity-check x with: x = D - fwd_scan_range.
+    x_offset: 0.295  # meters (forward)  [measured]
+    y_offset: 0.0    # meters (lateral)  [centered]
+    z_offset: 0.165  # meters (height)   [measured]
+    yaw_offset: 0.0  # radians (mount rotation; confirm sensor forward-arrow points ahead)
 
   imu:
     # From imu_calib.py: stationary for 1 minute (VESC 6 MkVI onboard IMU / BMI160)
