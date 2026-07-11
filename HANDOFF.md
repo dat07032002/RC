@@ -94,6 +94,10 @@ so scripts have exclusive control. Verified mapping + watchdog work.
 - **Asymmetric steering applied**: left/right servo gains are `-0.9194/-0.8842`
   servo units/radian. ROS command conversion, odometry, analytic simulation, PhysX task,
   USD joint limits, and viewer now preserve the measured asymmetry.
+- **IMU Plan A tested and rejected**: compact VESC BMI160 accel+gyro polling peaked at
+  ~44 Hz; a balanced schedule produced ~38.6 Hz IMU but only ~3.7 Hz motor state with
+  gaps up to 1.18 s. Restored motor-priority polling and selected the in-hand SparkFun
+  BNO086 over Jetson I²C as the primary production IMU. BMI160 remains backup/diagnostic.
 
 ## Next tests
 1. Coast-down friction with the dedicated zero-current/freewheel script and long runout.

@@ -22,7 +22,7 @@ Slew limiter + VESC bridge (VESC closes speed/servo loops internally)
 |---|---|---|
 | Compute | Orin Nano shared: SLAM + EKF + policy + safety | policy 20 Hz |
 | LiDAR | 40 Hz, 270°, 10 m guaranteed (M) | perception ceiling 25 ms |
-| IMU | VESC BMI160 at 7.5 Hz today (M) | fix to ≥100 Hz (see §1) |
+| IMU | BNO086 on Jetson I²C (selected); VESC BMI160 backup | Plan A bandwidth test failed |
 | Wheel encoder | VESC eRPM telemetry is the encoder | odom scale 1.035 (P, n=1) |
 | Steering feedback | none (hobby servo) | steering state modeled, never measured |
 | Speed | 0.57 m/s capped test (M); true max (?) | design speed ≤2 m/s until tire model |
@@ -33,12 +33,12 @@ Slew limiter + VESC bridge (VESC closes speed/servo loops internally)
 ## 1. Sensors
 
 - **LiDAR 40 Hz**: 1081 beams → 64 for policy; safety layer uses full raw scan.
-- **IMU — the known gap**: BMI160 chip supports 400 Hz; our patched
-  vesc_driver polls COMM_GET_IMU_DATA at 7.5 Hz. Plan A: raise polling to
-  ~100 Hz (watch VESC serial bandwidth vs motor commands). **Plan B (hardware
-  in hand): SparkFun BNO086 on Jetson I²C** — 400 Hz, onboard fusion,
-  independent of the VESC link, mounts away from motor vibration. If Plan A
-  bench test shows serial contention, go straight to the BNO086.
+- **IMU — Plan B selected after measured Plan A failure**: The VESC BMI160
+  packet was reduced to accel+gyro only and scheduled aggressively. IMU reached
+  only ~44 Hz alone or ~38.6 Hz in a balanced test, while motor state collapsed
+  to ~3.7 Hz with gaps up to 1.18 s. The request/response path cannot meet the
+  ~100 Hz EKF requirement without damaging wheel telemetry. Use the **SparkFun
+  BNO086 on Jetson I²C** as the primary IMU; retain BMI160 as diagnostics/backup.
 - **Wheel odometry**: VESC eRPM ≥50 Hz, ×1.035 correction (P — re-verify).
 - **Steering feedback: deleted.** First-order model δ̇=(δ_cmd−δ)/τ, τ from
   pending stand test; safety margins absorb model error.
@@ -131,6 +131,6 @@ exists (sim ground truth); idling below creep speed >2 s otherwise penalized.
 2. Brake/coast decel → a_brake (currently guessed 1.5)
 3. True v_max / throttle curve → action scaling
 4. Policy→motor latency on Orin → τ_total
-5. IMU rate fix (vesc_driver polling, else BNO086) → EKF viability
+5. Install/configure BNO086 on Jetson I²C and validate ≥100 Hz → EKF viability
 6. LiDAR mount offset → TF tree, map quality
 7. Odometry factor repeatability (n=1) → DR confidence
