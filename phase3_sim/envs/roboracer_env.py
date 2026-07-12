@@ -167,8 +167,15 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
     dr_delay_steps = (1, 3)            # action delay 50-150 ms at 20 Hz control
     dr_speed_scale = (0.7, 1.3)        # v_max/a_max ±30% (capped-test uncertainty)
     dr_noise_mult = (1.0, 10.0)        # x measured lidar noise (up to ~5 cm @ 5 m)
-    dr_goal_bearing_noise = (0.02, 0.12)  # rad std — localization error proxy
-    dr_goal_dist_noise = 0.05          # relative std on goal distance
+    # --- structured estimator-error model (goal obs = EKF/SLAM output proxy).
+    # Real estimator error is temporally CORRELATED (drift), not white: model
+    # it as an OU random walk per env, plus small white jitter, plus rare
+    # relocalization jumps that snap the drift toward zero.
+    dr_goal_bearing_noise = (0.005, 0.03)   # rad std, white component
+    dr_goal_dist_noise = 0.02               # relative std, white component
+    dr_goal_drift = (0.004, 0.03)           # OU step size (stationary std ~5x)
+    goal_drift_pull = 0.02                  # OU mean reversion per step
+    reloc_jump_prob = 0.003                 # ~1 correction per 17 s per env
 
     # rewards
     rew_progress: float = 4.0
@@ -415,6 +422,10 @@ class RoboracerEnv(DirectRLEnv):
         self.amax_e = torch.full((n,), cfg.a_max, device=dev)
         self.noise_mult_e = torch.ones(n, device=dev)
         self.bearing_noise_e = torch.zeros(n, device=dev)
+        # estimator drift state (OU): correlated bias on goal bearing/distance
+        self.drift_e = torch.zeros(n, device=dev)          # per-env OU step size
+        self.bearing_bias = torch.zeros(n, device=dev)     # rad
+        self.dist_bias = torch.zeros(n, device=dev)        # relative
 
         # track storage (padded)
         S, P = cfg.max_wall_segments, cfg.max_centerline_pts
@@ -619,10 +630,23 @@ class RoboracerEnv(DirectRLEnv):
         rel = self.goal_xy - self.car_state[:, :2]
         dist = rel.norm(dim=1, keepdim=True)
         bearing = torch.atan2(rel[:, 1], rel[:, 0]) - self.car_state[:, 2]
-        # localization-error proxy: the real goal bearing/distance come from
-        # online SLAM, never from ground truth (per-env noise level)
-        bearing = bearing + torch.randn_like(bearing) * self.bearing_noise_e
-        dist = dist * (1.0 + torch.randn_like(dist) * self.cfg.dr_goal_dist_noise)
+        # estimator-error model: OU drift (correlated) + white jitter + jumps.
+        # Called once per control step, so this advances the drift at 20 Hz.
+        lam = self.cfg.goal_drift_pull
+        self.bearing_bias = (1 - lam) * self.bearing_bias \
+            + torch.randn_like(self.bearing_bias) * self.drift_e
+        self.dist_bias = (1 - lam) * self.dist_bias \
+            + torch.randn_like(self.dist_bias) * self.drift_e * 0.5
+        # relocalization events: scan-match correction snaps drift toward zero
+        jump = torch.rand_like(self.bearing_bias) < self.cfg.reloc_jump_prob
+        keep = torch.rand_like(self.bearing_bias) * 0.3
+        self.bearing_bias = torch.where(jump, self.bearing_bias * keep, self.bearing_bias)
+        self.dist_bias = torch.where(jump, self.dist_bias * keep, self.dist_bias)
+
+        bearing = bearing + self.bearing_bias \
+            + torch.randn_like(bearing) * self.bearing_noise_e
+        dist = dist * (1.0 + self.dist_bias.unsqueeze(1)
+                       + torch.randn_like(dist) * self.cfg.dr_goal_dist_noise)
         obs = torch.cat(
             [
                 rays / self.cfg.lidar_max_range,
@@ -713,6 +737,13 @@ class RoboracerEnv(DirectRLEnv):
         self.bearing_noise_e[env_ids] = cfg.dr_goal_bearing_noise[0] \
             + torch.rand(k, device=dev) \
             * (cfg.dr_goal_bearing_noise[1] - cfg.dr_goal_bearing_noise[0])
+        # estimator drift: per-env OU step size; start at the stationary
+        # distribution (episodes begin mid-drift, like a real run)
+        self.drift_e[env_ids] = cfg.dr_goal_drift[0] + torch.rand(k, device=dev) \
+            * (cfg.dr_goal_drift[1] - cfg.dr_goal_drift[0])
+        stat_std = self.drift_e[env_ids] / math.sqrt(2.0 * cfg.goal_drift_pull)
+        self.bearing_bias[env_ids] = torch.randn(k, device=dev) * stat_std
+        self.dist_bias[env_ids] = torch.randn(k, device=dev) * stat_std * 0.5
         # progress baseline for the fresh track
         self.progress[env_ids] = self._arc_progress()[env_ids]
 
