@@ -18,6 +18,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -35,6 +36,10 @@ def generate_launch_description():
                                       description='SAFETY cap on motor speed (m/s)')
     record = DeclareLaunchArgument('record', default_value='false',
                                    description='true -> record a rosbag of all topics')
+    use_bridge = DeclareLaunchArgument(
+        'use_bridge', default_value='true',
+        description='false -> skip pwm_vesc_bridge (its watchdog brakes the motor; '
+                    'disable it for the freewheel coast-down test)')
 
     vesc_driver_node = Node(
         package='vesc_driver', executable='vesc_driver_node',
@@ -50,9 +55,10 @@ def generate_launch_description():
 
     bridge_node = Node(
         executable=bridge_path, name='pwm_vesc_bridge', output='screen',
+        condition=IfCondition(LaunchConfiguration('use_bridge')),
         parameters=[{'max_speed_mps': LaunchConfiguration('max_speed_mps')}])
 
     return LaunchDescription([
-        max_speed, record,
+        max_speed, record, use_bridge,
         vesc_driver_node, vesc_to_odom_node, urg_node, bridge_node,
     ])

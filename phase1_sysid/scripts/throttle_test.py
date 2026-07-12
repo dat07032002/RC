@@ -141,10 +141,18 @@ class ThrottleTest(Node):
             self.get_logger().info(f"\nCoast-down results:")
             self.get_logger().info(f"  Peak velocity: {max_vel:.2f} m/s")
             self.get_logger().info(f"  Final velocity: {final_vel:.2f} m/s")
-            self.get_logger().info(f"  Deceleration: {friction_accel:.2f} m/s²")
+            self.get_logger().info(f"  Deceleration (crude avg): {friction_accel:.2f} m/s²")
 
             print(f"\n→ Record in vehicle_params.yaml:")
             print(f"  friction_coefficient: {friction_accel:.2f}  # negative = deceleration")
+
+            # Raw curve: the crude avg above is unreliable (includes post-stop time).
+            # Dump the full velocity-time trace so the coast slope can be fit properly
+            # and rolling vs aero drag separated by decel-vs-speed.
+            print(f"\nCoast-down curve (peak was {max_vel:.2f} m/s):")
+            print("Time (s)\tVelocity (m/s)")
+            for t, v in zip(self.times, self.velocities):
+                print(f"{t:.3f}\t{v:.3f}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Throttle response test')

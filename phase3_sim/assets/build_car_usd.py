@@ -5,11 +5,12 @@ Builds roboracer_car.usd — an Ackermann articulation matching the real car
 
 Structure:
   chassis (rigid box)
-   ├─ steer_FL/FR: revolute Z, ±25 deg, position drive   (hobby servo)
+   ├─ steer_FL/FR: revolute Z, -19.44/+24.93 deg, position drive
    │   └─ wheel_FL/FR: revolute Y, velocity drive        (AWD front)
    └─ wheel_RL/RR: revolute Y, velocity drive            (AWD rear)
 
-MEASURED (Phase 1): wheelbase 0.33, track 0.24, total mass ~3.6 kg, steer ±25 deg.
+MEASURED (Phase 1): wheelbase 0.33, track 0.24, total mass ~3.6 kg,
+steer right/left = -19.44/+24.93 deg.
 PLACEHOLDERS (update when measured — marked [P]):
   wheel radius/width, chassis dims, mass split, tire friction.
 
@@ -34,12 +35,13 @@ from pxr import Gf, PhysxSchema, Usd, UsdGeom, UsdPhysics, UsdShade  # noqa: E40
 # ---- parameters -----------------------------------------------------------
 WHEELBASE = 0.33          # measured
 TRACK = 0.24              # measured
-STEER_LIMIT_DEG = 25.0    # measured (weaker side)
+STEER_LEFT_LIMIT_DEG = 24.93   # measured from 0.710 m full-lock radius
+STEER_RIGHT_LIMIT_DEG = 19.44  # measured from 0.935 m full-lock radius
 MASS_TOTAL = 3.6          # measured estimate
 
-WHEEL_R = 0.0425          # [P] wheel radius (m) — measure tomorrow
-WHEEL_W = 0.035           # [P] wheel width (m)
-CHASSIS = (0.40, 0.17, 0.09)   # [P] chassis LxWxH (m)
+WHEEL_R = 0.045           # measured on-car 2026-07-11 (loaded rally tire w/ foam)
+WHEEL_W = 0.028           # researched (Traxxas rally tire section width ~28 mm)
+CHASSIS = (0.35, 0.16, 0.09)   # inertial mass-envelope proxy (NOT body shell dims)
 M_WHEEL = 0.12            # [P] per-wheel mass (kg)
 M_KNUCKLE = 0.05          # [P]
 M_CHASSIS = MASS_TOTAL - 4 * M_WHEEL - 2 * M_KNUCKLE  # 3.02 kg
@@ -139,7 +141,7 @@ def main():
                   M_KNUCKLE, (0.3, 0.3, 0.3))
         revolute(stage, f"/car/joints/steer_{side}", "/car/chassis", kpath,
                  "Z", (FRONT_X, y, -0.02), (0, 0, 0),
-                 limits_deg=(-STEER_LIMIT_DEG, STEER_LIMIT_DEG),
+                 limits_deg=(-STEER_RIGHT_LIMIT_DEG, STEER_LEFT_LIMIT_DEG),
                  drive={"stiffness": 40.0, "damping": 2.0, "max_force": 10.0})
         wpath = f"/car/wheel_{side}"
         woff = WHEEL_W / 2 + 0.02
@@ -167,7 +169,8 @@ def main():
     stage.Save()
     print(f"[CarBuilder] wrote {args_cli.out}")
     print(f"[CarBuilder] wheelbase={WHEELBASE} track={TRACK} mass={MASS_TOTAL} "
-          f"steer=±{STEER_LIMIT_DEG} deg | [P] wheel_r={WHEEL_R} friction={TIRE_FRICTION}")
+          f"steer=-{STEER_RIGHT_LIMIT_DEG}/+{STEER_LEFT_LIMIT_DEG} deg | "
+          f"[P] wheel_r={WHEEL_R} friction={TIRE_FRICTION}")
 
 
 if __name__ == "__main__":

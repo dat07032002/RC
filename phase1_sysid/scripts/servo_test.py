@@ -56,33 +56,41 @@ class ServoTest(Node):
             input("  Press Enter when angle measured... ")
 
     def run_step_response_test(self):
-        """Measure response time with video."""
-        self.get_logger().info("\n--- STEP RESPONSE TEST ---")
-        self.get_logger().info("1. Start recording slow-motion video (120fps preferred)")
-        input("Press Enter to start step input...")
+        """Full-range step for slow-mo video analysis (lag + slew rate).
 
-        self.get_logger().info("Sending step: 1500 µs → 1700 µs")
-        self.send_pwm(1500, "(initial)")
-        time.sleep(0.5)
+        Keep the TERMINAL in the camera frame. The big banner flashes on the
+        exact frame the command is sent, giving a video time-zero reference.
+        Do one direction per clip (e.g. center->right), then re-run for left.
+        """
+        self.get_logger().info("\n--- STEP RESPONSE TEST (full range) ---")
+        direction = input("Step direction (right/left) [right]: ").strip().lower()
+        target_pwm = 1000 if direction == "left" else 2000
+        target_name = "LEFT FULL" if direction == "left" else "RIGHT FULL"
 
-        # Record: step up
-        print("\n>>> VIDEO RECORDING <<<")
-        self.send_pwm(1700, "(STEP UP)")
+        print("\nCAR ON STAND, wheels off ground.")
+        print("Start slow-mo video NOW (120/240fps). Keep this terminal IN FRAME.")
+        input("Press Enter, then a 3s countdown starts...")
+
+        # Settle at center so the wheel is visibly still before the step.
+        self.send_pwm(1500, "(center, settling)")
         time.sleep(1.0)
+        for n in (3, 2, 1):
+            print(f"   ... {n}")
+            time.sleep(1.0)
 
-        # Return to center
+        # Fire the step and stamp it. The banner + monotonic time land in the
+        # same instant the PWM is published; that frame is video t=0.
+        t0 = time.monotonic()
+        self.send_pwm(target_pwm, f"({target_name})")
+        print("\n" + "#" * 50)
+        print(f"###  COMMAND SENT  t0={t0:.3f}s  -> {target_name}  ###")
+        print("#" * 50 + "\n")
+        time.sleep(1.5)  # hold so the wheel fully settles on camera
+
         self.send_pwm(1500, "(return to center)")
-
-        self.get_logger().info("\n2. Analyze video:")
-        self.get_logger().info("   - Count frames from command to 90% of final position")
-        self.get_logger().info("   - Delay (ms) = (frame_count / fps) * 1000")
-        response_time = input("Enter response time (ms): ")
-
-        try:
-            self.get_logger().info(f"Measured response delay: {response_time} ms")
-            print(f"→ Record in vehicle_params.yaml: servo_response_delay = {response_time}")
-        except:
-            pass
+        print("Step done. Stop the video.")
+        print("Send me the video path; I'll extract frames and compute")
+        print("lag (ms) and slew rate (deg/s). Re-run for the other direction.")
 
     def run_interactive(self):
         """Interactive servo control."""

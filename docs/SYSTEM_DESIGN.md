@@ -22,10 +22,10 @@ Slew limiter + VESC bridge (VESC closes speed/servo loops internally)
 |---|---|---|
 | Compute | Orin Nano shared: SLAM + EKF + policy + safety | policy 20 Hz |
 | LiDAR | 40 Hz, 270°, 10 m guaranteed (M) | perception ceiling 25 ms |
-| IMU | VESC BMI160 at 7.5 Hz today (M) | fix to ≥100 Hz (see §1) |
-| Wheel encoder | VESC eRPM telemetry is the encoder | odom scale 1.035 (P, n=1) |
+| IMU | BNO086 on Jetson I²C (selected); VESC BMI160 backup | Plan A bandwidth test failed |
+| Wheel encoder | VESC tachometer-delta odometry, ~8.7 Hz fallback polling | distance survives gaps; velocity sparse |
 | Steering feedback | none (hobby servo) | steering state modeled, never measured |
-| Speed | 0.57 m/s capped test (M); true max (?) | design speed ≤2 m/s until tire model |
+| Speed | 2.12 m/s measured peak under 2 m/s controller cap | design speed ≤2 m/s |
 | Brake decel | (?) | safety uses conservative 1.5 m/s² placeholder |
 | GPS | none (indoor) | "GPS denial" → localization degradation |
 | Camera | RealSense shelved | LiDAR-only for now |
@@ -33,13 +33,15 @@ Slew limiter + VESC bridge (VESC closes speed/servo loops internally)
 ## 1. Sensors
 
 - **LiDAR 40 Hz**: 1081 beams → 64 for policy; safety layer uses full raw scan.
-- **IMU — the known gap**: BMI160 chip supports 400 Hz; our patched
-  vesc_driver polls COMM_GET_IMU_DATA at 7.5 Hz. Plan A: raise polling to
-  ~100 Hz (watch VESC serial bandwidth vs motor commands). **Plan B (hardware
-  in hand): SparkFun BNO086 on Jetson I²C** — 400 Hz, onboard fusion,
-  independent of the VESC link, mounts away from motor vibration. If Plan A
-  bench test shows serial contention, go straight to the BNO086.
-- **Wheel odometry**: VESC eRPM ≥50 Hz, ×1.035 correction (P — re-verify).
+- **IMU — Plan B selected after measured Plan A failure**: The VESC BMI160
+  packet was reduced to accel+gyro only and scheduled aggressively. IMU reached
+  only ~44 Hz alone or ~38.6 Hz in a balanced test, while motor state collapsed
+  to ~3.7 Hz with gaps up to 1.18 s. The request/response path cannot meet the
+  ~100 Hz EKF requirement without damaging wheel telemetry. Use the **SparkFun
+  BNO086 on Jetson I²C** as the primary IMU; retain BMI160 as diagnostics/backup.
+- **Wheel odometry**: calibrated VESC tachometer deltas (`4529.41`, correction `1.0`)
+  preserve distance across telemetry gaps. Final motor-priority polling measured ~8.7 Hz
+  with occasional ~1.12 s gaps, so the BNO086/EKF must interpolate local motion.
 - **Steering feedback: deleted.** First-order model δ̇=(δ_cmd−δ)/τ, τ from
   pending stand test; safety margins absorb model error.
 - **GPS: deleted.**
@@ -93,7 +95,7 @@ is not lateral uncertainty).
   physical testbed (fixed start/end points, track shape AND obstacles change
   between runs) means no reliable route/map exists at deployment. The policy
   follows the track from LiDAR; goal direction is guidance only.
-- Act: [v_target ≤ 2 m/s indoor cap, δ_target ∈ ±25°].
+- Act: [v_target ≤ 2 m/s indoor cap, δ_target ∈ −19.44° right / +24.93° left].
 
 ## 4. Safety layer (build + trust FIRST)
 
@@ -101,7 +103,8 @@ Standalone node, no RL deps, override authority ahead of the bridge.
 1. d_stop = v·τ_total + v²/(2·a_brake) + d_margin; τ_total 100 ms
    conservative, a_brake 1.5 m/s² (? — measure), d_margin 0.3 m; vs min raw
    scan in the steering-feasible cone.
-2. Arc-existence check within ±25° + steer-rate limit; no free arc → stop.
+2. Arc-existence check within the asymmetric measured steering limits + steer-rate limit;
+   no free arc → stop.
 3. Envelope governor: speed ceiling shrinks with uncertainty, proximity,
    scan staleness.
 4. Watchdogs: bridge 0.5 s motor watchdog (exists) + scan-age >100 ms →
@@ -126,14 +129,14 @@ returns only for friction-limit racing (post tire model).
 | Particle filter | — | 40 |
 | RL policy | 40–50 | 20 |
 | Safety | 100–200 | 40 + watchdogs |
-| Speed/steer | 100–200 | VESC internal kHz + 50 Hz setpoints |
+| Speed/steer | 100–200 | VESC internal kHz; ROS telemetry ~8.7 Hz, commands asynchronous |
 
 ## 7. Training environment (phase3_sim/roboracer_isaaclab_task.py)
 
 DR anchored to measurements: corridor 0.5–2.0 m · turns 3–8 · obstacles
 static→appearing→moving · dead ends/blockages · friction wide · LiDAR noise
-(a,b)×[0.5,5] + beam dropout · **odom scale ∈ [1.00, 1.12] (measured spread)**
-· action delay 20–150 ms · v/a ±30%.
+(a,b)×[0.5,5] + beam dropout · tachometer scale centered at `1.0` with residual
+perturbation · action delay 20–150 ms · v/a ±30%.
 
 Curriculum: 1 fixed track ✅ · 2 random tracks ✅ · 3 goal + static obstacles
 · 4 appearing/moving obstacles · 5 mid-episode geometry change · 6 blocked
@@ -152,6 +155,6 @@ exists (sim ground truth); idling below creep speed >2 s otherwise penalized.
 2. Brake/coast decel → a_brake (currently guessed 1.5)
 3. True v_max / throttle curve → action scaling
 4. Policy→motor latency on Orin → τ_total
-5. IMU rate fix (vesc_driver polling, else BNO086) → EKF viability
+5. Install/configure BNO086 on Jetson I²C and validate ≥100 Hz → EKF viability
 6. LiDAR mount offset → TF tree, map quality
 7. Odometry factor repeatability (n=1) → DR confidence

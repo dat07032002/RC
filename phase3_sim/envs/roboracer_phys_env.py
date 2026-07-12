@@ -6,7 +6,7 @@ instead of the analytic bicycle model.
 Subclasses RoboracerEnv, so track generation, LiDAR, goal-conditioning,
 rewards and terminations are inherited unchanged. What changes:
   * the car is a USD articulation (build with assets/build_car_usd.py):
-    steering = position-driven revolute joints (±25 deg, servo-lag filtered),
+    steering = position-driven revolute joints (-19.44/+24.93 deg, servo-lag filtered),
     wheels   = velocity-driven revolute joints (AWD), tires get PhysX friction
   * car_state [x, y, yaw, v, steer] is READ BACK from the simulation each step
     instead of integrated — tire slip, inertia and drive limits now exist.
@@ -34,7 +34,7 @@ CAR_USD = os.environ.get(
     str(Path.home() / "roboracer_project/phase3_sim/assets/roboracer_car.usd"),
 )
 
-WHEEL_RADIUS = 0.0425  # [P] keep in sync with build_car_usd.py until measured
+WHEEL_RADIUS = 0.045  # measured 2026-07-11; keep in sync with build_car_usd.py
 
 ROBORACER_CAR_CFG = ArticulationCfg(
     prim_path="/World/envs/env_.*/Robot",
@@ -103,7 +103,12 @@ class RoboracerPhysEnv(RoboracerEnv):
     # ---- actions: joint targets instead of state integration --------------
     def _apply_action(self):
         dt = self.cfg.sim.dt
-        steer_cmd = self._act[:, 0] * self.steer_max_rad
+        steer_action = self._act[:, 0]
+        steer_cmd = torch.where(
+            steer_action >= 0.0,
+            steer_action * self.steer_left_max_rad,
+            steer_action * self.steer_right_max_rad,
+        )
         throttle = (self._act[:, 1] + 1.0) / 2.0
 
         # servo lag (measured tau) applied to the position target
