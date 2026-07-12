@@ -86,6 +86,9 @@ def load_vehicle_params(path: str) -> dict:
         # UST-10LX guaranteed range is 10 m (yaml says 30 — that is the max
         # detectable, not guaranteed; indoors 10 m is the honest number)
         "lidar_max_range": 10.0,
+        # sensor sits ahead of the rear axle (measured 0.295 m) — rays must
+        # originate there, not at the axle, or cornering observations are wrong
+        "lidar_x_offset": _f(raw, "sensors.lidar.x_offset", 0.0),
         # policy->motor latency unmeasured; 60 ms is a conservative placeholder,
         # DR range (20-100 ms) brackets it during training
         "latency_ms": _f(raw, "latency.total_latency_ms", 60.0),
@@ -134,6 +137,7 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
     lidar_noise_a: float = VEHICLE["lidar_noise_a"]
     lidar_noise_b: float = VEHICLE["lidar_noise_b"]
     lidar_max_range: float = VEHICLE["lidar_max_range"]
+    lidar_x_offset: float = VEHICLE["lidar_x_offset"]  # ahead of rear axle
 
     # --- domain randomization (comprehensive_plan.md) ---
     dr_corridor_width = (0.5, 2.0)
@@ -389,7 +393,9 @@ class RoboracerEnv(DirectRLEnv):
         pose = self.car_state
         ang = pose[:, 2:3] + self.ray_angles.unsqueeze(0)       # [E,R]
         D = torch.stack([torch.cos(ang), torch.sin(ang)], -1)   # [E,R,2]
-        O = pose[:, :2].view(E, 1, 1, 2)
+        # rays originate at the sensor (0.295 m ahead of rear axle, measured)
+        fwd = torch.stack([torch.cos(pose[:, 2]), torch.sin(pose[:, 2])], -1)
+        O = (pose[:, :2] + self.cfg.lidar_x_offset * fwd).view(E, 1, 1, 2)
         D = D.view(E, R, 1, 2)
         P1 = self.walls[:, :, 0:2].view(E, 1, -1, 2)
         P2 = self.walls[:, :, 2:4].view(E, 1, -1, 2)
@@ -404,15 +410,23 @@ class RoboracerEnv(DirectRLEnv):
         return t.amin(dim=2).clamp(max=self.cfg.lidar_max_range)
 
     def _wall_distance(self) -> torch.Tensor:
-        """Min distance from car center to any wall segment: [E]."""
-        pos = self.car_state[:, :2].view(-1, 1, 2)
-        a, b = self.walls[:, :, 0:2], self.walls[:, :, 2:4]
+        """Min distance from the car body to any wall segment: [E].
+
+        Two collision discs — rear axle and front axle — so nose-first
+        impacts are detected, not just body-center proximity."""
+        yaw = self.car_state[:, 2]
+        fwd = torch.stack([torch.cos(yaw), torch.sin(yaw)], -1)
+        rear = self.car_state[:, :2]
+        front = rear + self.cfg.wheelbase * fwd
+        pos = torch.stack([rear, front], dim=1).view(-1, 2, 1, 2)   # [E,2,1,2]
+        a = self.walls[:, :, 0:2].unsqueeze(1)                       # [E,1,S,2]
+        b = self.walls[:, :, 2:4].unsqueeze(1)
         ab = b - a
         t = ((pos - a) * ab).sum(-1) / ab.square().sum(-1).clamp_min(1e-9)
         proj = a + t.clamp(0, 1).unsqueeze(-1) * ab
-        d = (pos - proj).square().sum(-1).sqrt()
-        d = torch.where(self.wall_mask, d, torch.full_like(d, 1e9))
-        return d.amin(dim=1)
+        d = (pos - proj).square().sum(-1).sqrt()                     # [E,2,S]
+        d = torch.where(self.wall_mask.unsqueeze(1), d, torch.full_like(d, 1e9))
+        return d.amin(dim=(1, 2))
 
     def _get_observations(self) -> dict:
         rays = self._raycast_lidar()

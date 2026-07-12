@@ -134,6 +134,10 @@ class RoboracerPhysEnv(RoboracerEnv):
     def _sync_car_state(self):
         pos = self.robot.data.root_pos_w[:, :2] - self.scene.env_origins[:, :2]
         _, _, yaw = euler_xyz_from_quat(self.robot.data.root_quat_w)
+        # chassis origin is mid-wheelbase; car_state convention (and the
+        # LiDAR x_offset) is the REAR AXLE — shift back half a wheelbase
+        fwd = torch.stack([torch.cos(yaw), torch.sin(yaw)], dim=1)
+        pos = pos - 0.5 * self.cfg.wheelbase * fwd
         v = self.robot.data.root_lin_vel_b[:, 0]
         steer = self.robot.data.joint_pos[:, self._steer_ids].mean(dim=1)
         self.car_state = torch.stack([pos[:, 0], pos[:, 1], yaw, v, steer], dim=1)
@@ -148,7 +152,10 @@ class RoboracerPhysEnv(RoboracerEnv):
         k = len(env_ids)
         spawn = self.car_state[env_ids]
         pos = torch.zeros(k, 3, device=self.device)
-        pos[:, :2] = spawn[:, :2] + self.scene.env_origins[env_ids, :2]
+        # spawn (rear-axle frame) -> chassis-origin (mid-wheelbase) for the sim
+        fwd = torch.stack([torch.cos(spawn[:, 2]), torch.sin(spawn[:, 2])], dim=1)
+        pos[:, :2] = spawn[:, :2] + 0.5 * self.cfg.wheelbase * fwd \
+            + self.scene.env_origins[env_ids, :2]
         pos[:, 2] = 0.05
         half_yaw = spawn[:, 2] / 2.0
         quat = torch.zeros(k, 4, device=self.device)
