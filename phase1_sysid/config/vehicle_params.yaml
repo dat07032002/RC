@@ -56,7 +56,12 @@ throttle:
   max_acceleration: 3.5  # m/s²; use 2.5-4.5 m/s² domain randomization until external measurement
 
   # From coast-down test: set throttle to 0, measure deceleration
-  friction_coefficient: -X.XX  # m/s² (negative = deceleration)
+  # RESEARCH ESTIMATE (2026-07-12): rubber RC tires Crr ~0.015-0.03 + AWD
+  # driveline drag -> effective coast decel ~0.2-0.6 m/s2. Sim DRs this range.
+  friction_coefficient: -0.35  # m/s² estimate; measure with 5-6 m open floor
+  # Brake decel datapoint: controller test stopped from ~2 m/s in ~0.25 m
+  # overshoot -> VESC watchdog braking ~4-9 m/s². Safety layer keeps 1.5
+  # (conservative); sim brake DR 3-8 when braking is modeled.
 
   # From step response
   throttle_response_tau: 0.1  # seconds (1st-order lag time constant)

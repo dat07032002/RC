@@ -150,6 +150,13 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
     obstacle_min_gap: float = 0.50     # guaranteed passable gap on one side
     lookahead_m: float = 2.0           # goal waypoint distance along centerline
 
+    # --- runtime DR (per-env, resampled each reset; SYSTEM_DESIGN section 7) ---
+    dr_delay_steps = (1, 3)            # action delay 50-150 ms at 20 Hz control
+    dr_speed_scale = (0.7, 1.3)        # v_max/a_max ±30% (capped-test uncertainty)
+    dr_noise_mult = (1.0, 10.0)        # x measured lidar noise (up to ~5 cm @ 5 m)
+    dr_goal_bearing_noise = (0.02, 0.12)  # rad std — localization error proxy
+    dr_goal_dist_noise = 0.05          # relative std on goal distance
+
     # rewards
     rew_progress: float = 4.0
     rew_smoothness: float = 0.05
@@ -269,9 +276,14 @@ class RoboracerEnv(DirectRLEnv):
         self.prev_actions = torch.zeros(n, 2, device=dev)
         self._act = torch.zeros(n, 2, device=dev)
 
-        # action delay buffer (20 Hz control steps) from latency budget
-        delay_steps = max(1, round(VEHICLE["latency_ms"] / 50.0))
-        self.action_buf = torch.zeros(delay_steps, n, 2, device=dev)
+        # action delay buffer sized for the max DR delay; per-env delay index
+        self.action_buf = torch.zeros(cfg.dr_delay_steps[1] + 1, n, 2, device=dev)
+        self.delay_e = torch.full((n,), cfg.dr_delay_steps[0], dtype=torch.long, device=dev)
+        # per-env dynamics/sensor randomization (resampled in _reset_idx)
+        self.vmax_e = torch.full((n,), cfg.v_max, device=dev)
+        self.amax_e = torch.full((n,), cfg.a_max, device=dev)
+        self.noise_mult_e = torch.ones(n, device=dev)
+        self.bearing_noise_e = torch.zeros(n, device=dev)
 
         # track storage (padded)
         S, P = cfg.max_wall_segments, cfg.max_centerline_pts
@@ -362,7 +374,10 @@ class RoboracerEnv(DirectRLEnv):
     def _pre_physics_step(self, actions: torch.Tensor):
         self.action_buf = torch.roll(self.action_buf, shifts=-1, dims=0)
         self.action_buf[-1] = actions.clamp(-1.0, 1.0)
-        self._act = self.action_buf[0]
+        # per-env delay: env e acts on the command issued delay_e steps ago
+        D = self.action_buf.shape[0]
+        ar = torch.arange(self.num_envs, device=self.device)
+        self._act = self.action_buf[D - 1 - self.delay_e, ar]
 
     def _apply_action(self):
         steer_action = self._act[:, 0]
@@ -377,9 +392,10 @@ class RoboracerEnv(DirectRLEnv):
         x, y, yaw, v, steer = self.car_state.unbind(dim=1)
         # first-order steering lag (measured tau)
         steer = steer + (steer_cmd - steer) * dt / self.cfg.steer_tau_s
-        # longitudinal: accel-limited approach to commanded speed
-        v_cmd = throttle * self.cfg.v_max
-        dv = (v_cmd - v).clamp(-self.cfg.a_max * dt, self.cfg.a_max * dt)
+        # longitudinal: accel-limited approach to commanded speed (per-env DR)
+        v_cmd = throttle * self.vmax_e
+        a_lim = self.amax_e * dt
+        dv = torch.clamp(v_cmd - v, -a_lim, a_lim)
         v = v + dv
         # bicycle kinematics with measured wheelbase
         yaw = yaw + v / self.cfg.wheelbase * torch.tan(steer) * dt
@@ -430,7 +446,10 @@ class RoboracerEnv(DirectRLEnv):
 
     def _get_observations(self) -> dict:
         rays = self._raycast_lidar()
-        noise_std = self.cfg.lidar_noise_a + self.cfg.lidar_noise_b * rays
+        # measured noise model x per-env DR multiplier (measured values are the
+        # sensor's best case; real maze surfaces/angles are worse)
+        noise_std = (self.cfg.lidar_noise_a + self.cfg.lidar_noise_b * rays) \
+            * self.noise_mult_e.unsqueeze(1)
         rays = (rays + torch.randn_like(rays) * noise_std).clamp_min(0.0)
         # goal conditioning: bearing/distance to the FINAL goal (room frame).
         # Deliberately NOT a route waypoint: the real testbed changes track
@@ -443,6 +462,10 @@ class RoboracerEnv(DirectRLEnv):
         rel = goal - self.car_state[:, :2]
         dist = rel.norm(dim=1, keepdim=True)
         bearing = torch.atan2(rel[:, 1], rel[:, 0]) - self.car_state[:, 2]
+        # localization-error proxy: the real goal bearing/distance come from
+        # online SLAM, never from ground truth (per-env noise level)
+        bearing = bearing + torch.randn_like(bearing) * self.bearing_noise_e
+        dist = dist * (1.0 + torch.randn_like(dist) * self.cfg.dr_goal_dist_noise)
         obs = torch.cat(
             [
                 rays / self.cfg.lidar_max_range,
@@ -499,6 +522,23 @@ class RoboracerEnv(DirectRLEnv):
         self.progress[env_ids] = 0.0
         self.crashed[env_ids] = False
         self.reached_goal[env_ids] = False
+        # resample per-env DR (delay, dynamics scale, sensor/localization noise)
+        k = len(env_ids)
+        cfg = self.cfg
+        dev = self.device
+        self.delay_e[env_ids] = torch.randint(
+            cfg.dr_delay_steps[0], cfg.dr_delay_steps[1] + 1, (k,), device=dev)
+        self.vmax_e[env_ids] = cfg.v_max * (
+            cfg.dr_speed_scale[0] + torch.rand(k, device=dev)
+            * (cfg.dr_speed_scale[1] - cfg.dr_speed_scale[0]))
+        self.amax_e[env_ids] = cfg.a_max * (
+            cfg.dr_speed_scale[0] + torch.rand(k, device=dev)
+            * (cfg.dr_speed_scale[1] - cfg.dr_speed_scale[0]))
+        self.noise_mult_e[env_ids] = cfg.dr_noise_mult[0] + torch.rand(k, device=dev) \
+            * (cfg.dr_noise_mult[1] - cfg.dr_noise_mult[0])
+        self.bearing_noise_e[env_ids] = cfg.dr_goal_bearing_noise[0] \
+            + torch.rand(k, device=dev) \
+            * (cfg.dr_goal_bearing_noise[1] - cfg.dr_goal_bearing_noise[0])
         # progress baseline for the fresh track
         self.progress[env_ids] = self._arc_progress()[env_ids]
 
