@@ -150,7 +150,11 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
     room_goal_min_dist: float = 2.0      # goal at least this far from spawn
     room_clearance: float = 0.4          # spawn/goal clearance from geometry
     goal_radius: float = 0.3             # success = within this of the goal
-    rew_gamma: float = 0.99              # PBRS discount (must match PPO gamma)
+    # PBRS discount. 1.0 = episodic-undiscounted form: standstill shaping is
+    # exactly zero. (0.99 matched PPO's gamma but paid +0.01*k*d per idle step,
+    # which out-earned goal completion over a 60 s episode -> measured 14%
+    # loiter-timeouts in EMPTY rooms at the R1 gate. Empirical trap, fixed.)
+    rew_gamma: float = 1.0
 
     # --- domain randomization (comprehensive_plan.md) ---
     dr_corridor_width = (0.5, 2.0)
