@@ -46,10 +46,32 @@ Slew limiter + VESC bridge (VESC closes speed/servo loops internally)
 
 ## 2. State estimation
 
+NOTE: the testbed (track shape changes between runs; 30 cm panels occlude the
+room from the 15 cm scan plane) means NO reliable prior map exists. Therefore:
+
 - Fast/local: EKF (`robot_localization`) fusing IMU (~100 Hz) + wheel odom
   (50 Hz) → smooth [v, ψ̇], dead-reckoned pose between scans.
-- Slow/global: `slam_toolbox` maps; `particle_filter` corrects pose at 40 Hz.
-  Particle spread = uncertainty output for policy + safety.
+- Slow/global: **online SLAM** (`slam_toolbox` mapping mode, no prior map) —
+  scan-matching pose in a start-anchored frame. Start pose is physically
+  fixed; goal = tape-measured displacement from start. This matches the sim's
+  goal observation exactly. Uncertainty from scan-match covariance.
+- `particle_filter` + prior map is reserved for FIXED benchmark
+  configurations (map once, repeat runs) — evaluation ground truth, not the
+  primary localization.
+
+Reliability rules for the fusion:
+1. **Degeneracy-aware weighting**: check which axes each scan match actually
+   constrains; in straight corridors reject the along-corridor correction and
+   let calibrated wheel odom own that axis.
+2. **Consistency gating**: reject scan matches that disagree wildly with
+   wheels+IMU (bad convergence / moved panel); inflate odom noise when wheels
+   report speed the IMU never saw (slip). Rejected measurement -> coast +
+   honest uncertainty growth, never a confident wrong pose.
+3. **Watchdogs + graceful degradation**: scan age >100 ms or N consecutive
+   rejected matches -> uncertainty spikes -> policy (stage-7 trained) and
+   safety governor slow the car. Speed always scales with confidence.
+Output: [x, y, ψ, v, ψ̇] + directional covariance (corridor-axis uncertainty
+is not lateral uncertainty).
 - State: [x, y, ψ, v, ψ̇] + covariance.
 - Latency: v1 = timestamp-aware fusion + constant-velocity prediction to
   actuation time. Full state-replay buffer only if measured end-to-end
