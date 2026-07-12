@@ -33,6 +33,10 @@ parser.add_argument("--max_iterations", type=int, default=1500)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--run_name", type=str, default="")
 parser.add_argument("--resume", type=str, default="", help="checkpoint .pt to resume from")
+parser.add_argument("--track_type", type=str, default="corridor",
+                    choices=["corridor", "room"], help="world variant")
+parser.add_argument("--obstacles", type=str, default="",
+                    help="'lo,hi' obstacle-count range override (curriculum stages)")
 parser.add_argument(
     "--vehicle_params",
     type=str,
@@ -101,6 +105,13 @@ def build_agent_cfg() -> RslRlOnPolicyRunnerCfg:
 
 def main():
     env_cfg = RoboracerEnvCfg()
+    env_cfg.track_type = args_cli.track_type
+    if args_cli.obstacles:
+        lo, hi = (int(x) for x in args_cli.obstacles.split(","))
+        if args_cli.track_type == "room":
+            env_cfg.dr_room_obstacles = (lo, hi)
+        else:
+            env_cfg.dr_num_obstacles = (lo, hi)
     env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.seed = args_cli.seed
     env = RoboracerEnv(env_cfg)

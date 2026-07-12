@@ -139,6 +139,19 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
     lidar_max_range: float = VEHICLE["lidar_max_range"]
     lidar_x_offset: float = VEHICLE["lidar_x_offset"]  # ahead of rear axle
 
+    # --- world type: "corridor" (original) or "room" (test-plan variant:
+    # SLAM-mapped room, user-placed obstacles, random spawn + destination) ---
+    track_type: str = "corridor"
+
+    # --- room-mode DR (used when track_type == "room") ---
+    dr_room_size = (3.0, 9.0)            # W, H each ~ U (adapt to any room)
+    dr_room_obstacles = (0, 10)
+    dr_room_obstacle_size = (0.15, 0.6)  # box side (m)
+    room_goal_min_dist: float = 2.0      # goal at least this far from spawn
+    room_clearance: float = 0.4          # spawn/goal clearance from geometry
+    goal_radius: float = 0.3             # success = within this of the goal
+    rew_gamma: float = 0.99              # PBRS discount (must match PPO gamma)
+
     # --- domain randomization (comprehensive_plan.md) ---
     dr_corridor_width = (0.5, 2.0)
     dr_num_turns = (3, 8)
@@ -165,7 +178,7 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
     rew_clearance: float = 1.0         # penalty slope inside clearance_dist
     clearance_dist: float = 0.25       # start penalizing below this wall distance
 
-    max_wall_segments: int = 40        # 24 corridor + up to 3 obstacles x 4 sides
+    max_wall_segments: int = 48        # corridor: 24+obstacles; room: 4+10x4
     max_centerline_pts: int = 12
 
 
@@ -256,6 +269,124 @@ def generate_corridor(rng: np.random.Generator, cfg: RoboracerEnvCfg):
     return np.array(walls, dtype=np.float32), pts.astype(np.float32)
 
 
+# ---------------------------------------------------------------------------
+# Room generation (test-plan variant): rectangular room, scattered box
+# obstacles, random spawn pose + goal with guaranteed reachability.
+# Returns walls [S,4], spawn [x,y,yaw], goal [x,y], shortest_path_len (m).
+# ---------------------------------------------------------------------------
+def _room_flood_fill(W, H, obstacles, start, goal, res=0.2, inflate=0.25):
+    """BFS on a coarse grid; returns shortest path length in meters or None."""
+    nx, ny = max(int(W / res), 2), max(int(H / res), 2)
+    occ = np.zeros((nx, ny), dtype=bool)
+    for cx, cy, c in obstacles:
+        r = c / 2 + inflate
+        x0, x1 = max(int((cx - r) / res), 0), min(int((cx + r) / res) + 1, nx)
+        y0, y1 = max(int((cy - r) / res), 0), min(int((cy + r) / res) + 1, ny)
+        occ[x0:x1, y0:y1] = True
+    # inflate room walls
+    b = max(int(inflate / res), 1)
+    occ[:b, :] = True; occ[-b:, :] = True; occ[:, :b] = True; occ[:, -b:] = True
+
+    def cell(p):
+        return (min(max(int(p[0] / res), 0), nx - 1), min(max(int(p[1] / res), 0), ny - 1))
+
+    s, g = cell(start), cell(goal)
+    if occ[s] or occ[g]:
+        return None
+    dist = np.full((nx, ny), -1.0)
+    dist[s] = 0.0
+    frontier = [s]
+    diag = res * math.sqrt(2.0)
+    while frontier:
+        nxt = []
+        for (i, j) in frontier:
+            for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1),
+                           (1, 1), (1, -1), (-1, 1), (-1, -1)):
+                ii, jj = i + di, j + dj
+                if 0 <= ii < nx and 0 <= jj < ny and not occ[ii, jj] and dist[ii, jj] < 0:
+                    dist[ii, jj] = dist[i, j] + (diag if di and dj else res)
+                    if (ii, jj) == g:
+                        return float(dist[ii, jj])
+                    nxt.append((ii, jj))
+        frontier = nxt
+    return None
+
+
+def generate_room(rng: np.random.Generator, cfg: RoboracerEnvCfg):
+    W = float(rng.uniform(*cfg.dr_room_size))
+    H = float(rng.uniform(*cfg.dr_room_size))
+    clr = cfg.room_clearance
+    n_obs = int(rng.integers(cfg.dr_room_obstacles[0], cfg.dr_room_obstacles[1] + 1))
+
+    for attempt in range(12):
+        obstacles = []
+        for _ in range(n_obs):
+            c = float(rng.uniform(*cfg.dr_room_obstacle_size))
+            obstacles.append((
+                float(rng.uniform(clr + c / 2, W - clr - c / 2)),
+                float(rng.uniform(clr + c / 2, H - clr - c / 2)),
+                c,
+            ))
+
+        def clear(p):
+            return (clr <= p[0] <= W - clr and clr <= p[1] <= H - clr
+                    and all(max(abs(p[0] - ox), abs(p[1] - oy)) > c / 2 + clr
+                            for ox, oy, c in obstacles))
+
+        def free_point():
+            for _ in range(50):
+                p = (float(rng.uniform(clr, W - clr)), float(rng.uniform(clr, H - clr)))
+                if clear(p):
+                    return p
+            return None
+
+        def free_pose():
+            # collision is checked at BOTH axles: the front point (wheelbase
+            # ahead along heading) must also be clear or the car spawns crashed
+            for _ in range(50):
+                p = free_point()
+                if p is None:
+                    return None
+                yaw = float(rng.uniform(-math.pi, math.pi))
+                front = (p[0] + cfg.wheelbase * math.cos(yaw),
+                         p[1] + cfg.wheelbase * math.sin(yaw))
+                if clear(front):
+                    return (p[0], p[1], yaw)
+            return None
+
+        pose = free_pose()
+        goal = free_point()
+        min_d = min(cfg.room_goal_min_dist, 0.5 * math.hypot(W, H))
+        if pose is None or goal is None or math.hypot(
+                goal[0] - pose[0], goal[1] - pose[1]) < min_d:
+            continue
+        spawn = (pose[0], pose[1])
+        sp_len = _room_flood_fill(W, H, obstacles, spawn, goal)
+        if sp_len is None:
+            if attempt >= 5 and n_obs > 0:
+                n_obs -= 1  # too cluttered — thin out and retry
+            continue
+
+        walls = [[0, 0, W, 0], [W, 0, W, H], [W, H, 0, H], [0, H, 0, 0]]
+        for ox, oy, c in obstacles:
+            h = c / 2
+            corners = [(ox - h, oy - h), (ox + h, oy - h), (ox + h, oy + h), (ox - h, oy + h)]
+            for k in range(4):
+                a, b2 = corners[k], corners[(k + 1) % 4]
+                walls.append([a[0], a[1], b2[0], b2[1]])
+        return (np.array(walls, dtype=np.float32),
+                np.array([pose[0], pose[1], pose[2]], dtype=np.float32),
+                np.array(goal, dtype=np.float32),
+                sp_len)
+
+    # degenerate fallback: empty room, straight-line task (never expected)
+    walls = np.array([[0, 0, W, 0], [W, 0, W, H], [W, H, 0, H], [0, H, 0, 0]],
+                     dtype=np.float32)
+    spawn = np.array([clr + 0.1, clr + 0.1, 0.0], dtype=np.float32)
+    goal = np.array([W - clr - 0.1, H - clr - 0.1], dtype=np.float32)
+    return walls, spawn, goal, float(np.linalg.norm(goal - spawn[:2]))
+
+
 class RoboracerEnv(DirectRLEnv):
     """Maze navigation: kinematic bicycle car + analytic planar LiDAR.
 
@@ -294,6 +425,11 @@ class RoboracerEnv(DirectRLEnv):
         self.cl_cum = torch.zeros(n, P - 1, device=dev)  # arc length at segment start
         self.total_len = torch.ones(n, device=dev)
         self.progress = torch.zeros(n, device=dev)
+        # goal in world (room) / centerline-end (corridor); one obs code path
+        self.goal_xy = torch.zeros(n, 2, device=dev)
+        self.spawn_pose = torch.zeros(n, 3, device=dev)
+        self.shortest_len = torch.ones(n, device=dev)   # flood-fill path, for SPL
+        self.prev_goal_dist = torch.zeros(n, device=dev)  # PBRS potential state
         self._min_wall_dist = torch.full((n,), 1e9, device=dev)
         self.crashed = torch.zeros(n, dtype=torch.bool, device=dev)
         self.reached_goal = torch.zeros(n, dtype=torch.bool, device=dev)
@@ -317,6 +453,9 @@ class RoboracerEnv(DirectRLEnv):
 
     # ---- track management ------------------------------------------------
     def _regenerate_track(self, env_ids):
+        if self.cfg.track_type == "room":
+            self._regenerate_room(env_ids)
+            return
         cfg = self.cfg
         for e in env_ids.tolist():
             walls, cl = generate_corridor(self.rng, cfg)
@@ -335,6 +474,28 @@ class RoboracerEnv(DirectRLEnv):
             self.cl_cum[e, : p - 1] = torch.as_tensor(cum[:-1], dtype=torch.float32, device=self.device)
             self.cl_mask[e, : p - 1] = True
             self.total_len[e] = float(cum[-1])
+            # unified goal/spawn representation
+            self.goal_xy[e] = torch.as_tensor(cl[p - 1], device=self.device)
+            self.spawn_pose[e] = torch.tensor([0.15, 0.0, 0.0], device=self.device)
+            self.shortest_len[e] = float(cum[-1])
+
+    def _regenerate_room(self, env_ids):
+        cfg = self.cfg
+        for e in env_ids.tolist():
+            walls, spawn, goal, sp_len = generate_room(self.rng, cfg)
+            s = min(len(walls), cfg.max_wall_segments)
+            self.walls[e].zero_()
+            self.wall_mask[e].zero_()
+            self.walls[e, :s] = torch.as_tensor(walls[:s], device=self.device)
+            self.wall_mask[e, :s] = True
+            # no centerline in room mode
+            self.cl_pts[e].zero_()
+            self.cl_mask[e].zero_()
+            self.cl_cum[e].zero_()
+            self.total_len[e] = 1.0
+            self.goal_xy[e] = torch.as_tensor(goal, device=self.device)
+            self.spawn_pose[e] = torch.as_tensor(spawn, device=self.device)
+            self.shortest_len[e] = sp_len
 
     def _arc_progress(self) -> torch.Tensor:
         """Project car position onto centerline -> arc length travelled."""
@@ -451,15 +612,11 @@ class RoboracerEnv(DirectRLEnv):
         noise_std = (self.cfg.lidar_noise_a + self.cfg.lidar_noise_b * rays) \
             * self.noise_mult_e.unsqueeze(1)
         rays = (rays + torch.randn_like(rays) * noise_std).clamp_min(0.0)
-        # goal conditioning: bearing/distance to the FINAL goal (room frame).
-        # Deliberately NOT a route waypoint: the real testbed changes track
-        # shape between runs, so no reliable route/map exists at deployment —
-        # only the fixed destination + localization. The policy must learn to
-        # follow the track from LiDAR and use goal direction as guidance.
-        ar = torch.arange(self.num_envs, device=self.device)
-        last_idx = self.cl_mask.sum(dim=1)  # index of last valid centerline pt
-        goal = self.cl_pts[ar, last_idx]
-        rel = goal - self.car_state[:, :2]
+        # goal conditioning: bearing/distance to the FINAL goal (world frame).
+        # Deliberately NOT a route waypoint: at deployment only the destination
+        # (in the SLAM map) + localization exist. The policy must follow
+        # geometry from LiDAR and use goal direction as guidance.
+        rel = self.goal_xy - self.car_state[:, :2]
         dist = rel.norm(dim=1, keepdim=True)
         bearing = torch.atan2(rel[:, 1], rel[:, 0]) - self.car_state[:, 2]
         # localization-error proxy: the real goal bearing/distance come from
@@ -486,11 +643,21 @@ class RoboracerEnv(DirectRLEnv):
         return {"policy": obs}
 
     def _get_rewards(self) -> torch.Tensor:
-        s = self._arc_progress()
-        ds = s - self.progress
-        self.progress = s
+        if self.cfg.track_type == "room":
+            # PBRS (Ng et al. 1999): gamma*Phi(s') - Phi(s), Phi = -k*dist.
+            # Policy-invariant dense shaping — cannot induce circling exploits.
+            d = (self.goal_xy - self.car_state[:, :2]).norm(dim=1)
+            shaping = self.cfg.rew_progress * (
+                self.prev_goal_dist - self.cfg.rew_gamma * d)
+            self.prev_goal_dist = d
+            ds = torch.zeros_like(d)  # corridor arc-progress unused
+        else:
+            s = self._arc_progress()
+            ds = s - self.progress
+            self.progress = s
+            shaping = self.cfg.rew_progress * ds
         smoothness = (self._act - self.prev_actions).square().sum(dim=1)
-        rew = self.cfg.rew_progress * ds - self.cfg.rew_smoothness * smoothness
+        rew = shaping - self.cfg.rew_smoothness * smoothness
         # clearance shaping: linear penalty once closer than clearance_dist
         rew = rew - self.cfg.rew_clearance * (
             self.cfg.clearance_dist - self._min_wall_dist
@@ -502,7 +669,11 @@ class RoboracerEnv(DirectRLEnv):
     def _get_dones(self):
         self._min_wall_dist = self._wall_distance()
         self.crashed = self._min_wall_dist < self.cfg.car_radius
-        self.reached_goal = self.progress > (self.total_len - 0.4)
+        if self.cfg.track_type == "room":
+            goal_dist = (self.goal_xy - self.car_state[:, :2]).norm(dim=1)
+            self.reached_goal = goal_dist < self.cfg.goal_radius
+        else:
+            self.reached_goal = self.progress > (self.total_len - 0.4)
         self.total_crashes += int(self.crashed.sum())
         self.total_goals += int(self.reached_goal.sum())
         time_out = self.episode_length_buf >= self.max_episode_length - 1
@@ -512,11 +683,14 @@ class RoboracerEnv(DirectRLEnv):
         super()._reset_idx(env_ids)
         self._regenerate_track(env_ids)
         self.car_state[env_ids] = 0.0
-        # spawn just past the start cap, small lateral/heading noise
         k = len(env_ids)
-        self.car_state[env_ids, 0] = 0.15
-        self.car_state[env_ids, 1] = 0.1 * (torch.rand(k, device=self.device) - 0.5)
-        self.car_state[env_ids, 2] = 0.1 * (torch.rand(k, device=self.device) - 0.5)
+        # spawn at the generated pose (+ small noise; room yaw is random already)
+        self.car_state[env_ids, 0:3] = self.spawn_pose[env_ids]
+        if self.cfg.track_type != "room":
+            self.car_state[env_ids, 1] += 0.1 * (torch.rand(k, device=self.device) - 0.5)
+            self.car_state[env_ids, 2] += 0.1 * (torch.rand(k, device=self.device) - 0.5)
+        self.prev_goal_dist[env_ids] = (
+            self.goal_xy[env_ids] - self.car_state[env_ids, :2]).norm(dim=1)
         self.action_buf[:, env_ids] = 0.0
         self.prev_actions[env_ids] = 0.0
         self.progress[env_ids] = 0.0
@@ -543,9 +717,10 @@ class RoboracerEnv(DirectRLEnv):
         self.progress[env_ids] = self._arc_progress()[env_ids]
 
 
-def run_smoke(num_envs: int, smoke_steps: int):
+def run_smoke(num_envs: int, smoke_steps: int, track_type: str = "corridor"):
     """Random-action smoke test; called by roboracer_isaaclab_task.py."""
     cfg = RoboracerEnvCfg()
+    cfg.track_type = track_type
     cfg.scene.num_envs = num_envs
     env = RoboracerEnv(cfg)
     obs0, _ = env.reset()
