@@ -5,7 +5,11 @@
 vehicle:
   wheelbase: 0.33  # meters (measured: front wheel center to rear wheel center)
   track_width: 0.24  # meters (measured: left wheel center to right wheel center)
-  mass: 3.6  # kg estimate from component masses; weigh complete car when possible
+  # Itemized from manufacturer specs (2026-07-12): RTR-no-batt 2630 g (Traxxas)
+  # - body shell ~175 - stock ESC/RX ~110 + VESC MkVI 232 (Trampa) + Orin Nano
+  # devkit 176 (NVIDIA) + UST-10LX 130 + cabling ~100 + deck/DC-DC ~185
+  # + battery 2872X 3S-5000 349 (12.3 oz). Range 3.45-3.60; weigh to confirm.
+  mass: 3.52  # kg, itemized estimate (body shell OFF, 2872X battery IN)
 
 # ============================================================================
 # STEERING CONFIGURATION

@@ -37,7 +37,7 @@ WHEELBASE = 0.33          # measured
 TRACK = 0.24              # measured
 STEER_LEFT_LIMIT_DEG = 24.93   # measured from 0.710 m full-lock radius
 STEER_RIGHT_LIMIT_DEG = 19.44  # measured from 0.935 m full-lock radius
-MASS_TOTAL = 3.6          # measured estimate
+MASS_TOTAL = 3.52         # itemized estimate 2026-07-12 (body off, 3S 2872X in)
 
 WHEEL_R = 0.045           # measured on-car 2026-07-11 (loaded rally tire w/ foam)
 WHEEL_W = 0.028           # researched (Traxxas rally tire section width ~28 mm)
