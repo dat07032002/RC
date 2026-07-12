@@ -97,9 +97,11 @@ def main():
           f"yaw_rate={yr_meas:.3f} rad/s (bicycle predicts {yr_pred:.3f}), "
           f"turn radius={radius:.2f} m")
 
-    # turning passes if within 70-110% of the bicycle prediction (tire slip
-    # makes the real/physical value a bit lower, never higher)
-    ok_v = 0.35 <= v_end <= 0.75
+    # speed passes if within 80-110% of configured v_max (bounds relative, so
+    # measurement updates to vehicle_params.yaml don't stale this test);
+    # turning passes within 70-110% of the bicycle prediction (tire slip
+    # makes the physical value a bit lower, never higher)
+    ok_v = 0.80 * cfg.v_max <= v_end <= 1.10 * cfg.v_max
     ok_yr = 0.70 * abs(yr_pred) <= abs(yr_meas) <= 1.10 * abs(yr_pred)
     print(f"[PhysSmoke] verdict: speed {'OK' if ok_v else 'FAIL'}, "
           f"turning {'OK' if ok_yr else 'FAIL'}")

@@ -53,11 +53,13 @@ ROBORACER_CAR_CFG = ArticulationCfg(
             joint_names_expr=["wheel_F.*"],
             stiffness=0.0, damping=0.0, effort_limit_sim=0.0,
         ),
-        # rear wheels: soft velocity drive with a small torque cap (~open diff).
-        # accel needs only ~0.05 Nm/wheel; the cap stops slip-forcing in turns.
+        # rear wheels: soft velocity drive with a torque cap (~open diff).
+        # a_max=3.5 m/s^2 needs ~0.27 Nm/wheel (F=m*a, r=0.0425); cap slightly
+        # above that so accel is friction/measurement-limited, not drive-limited,
+        # while still preventing slip-forcing in turns.
         "wheels_rear": ImplicitActuatorCfg(
             joint_names_expr=["wheel_R.*"],
-            stiffness=0.0, damping=0.3, effort_limit_sim=0.2,
+            stiffness=0.0, damping=0.3, effort_limit_sim=0.4,
         ),
     },
 )
