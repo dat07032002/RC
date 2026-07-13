@@ -71,12 +71,13 @@ class BNO086Node(Node):
             i2c = ExtendedI2C(self.bus_number)
             sensor = BNO08X_I2C(i2c, address=self.address)
             interval_us = max(2500, int(1_000_000 / self.publish_rate))
-            sensor.enable_feature(BNO_REPORT_ACCELEROMETER, interval_us)
-            sensor.enable_feature(BNO_REPORT_GYROSCOPE, interval_us)
+            self._enable_feature(sensor, BNO_REPORT_ACCELEROMETER, interval_us)
+            self._enable_feature(sensor, BNO_REPORT_GYROSCOPE, interval_us)
             if self.orientation_mode == 'game':
-                sensor.enable_feature(BNO_REPORT_GAME_ROTATION_VECTOR, interval_us)
+                self._enable_feature(
+                    sensor, BNO_REPORT_GAME_ROTATION_VECTOR, interval_us)
             else:
-                sensor.enable_feature(BNO_REPORT_ROTATION_VECTOR, interval_us)
+                self._enable_feature(sensor, BNO_REPORT_ROTATION_VECTOR, interval_us)
             self.sensor = sensor
             self.error_count = 0
             self.get_logger().info(
@@ -88,6 +89,17 @@ class BNO086Node(Node):
             self.get_logger().error(
                 f'BNO086 connection failed on I2C bus {self.bus_number}, '
                 f'address 0x{self.address:02x}: {exc}')
+
+    def _enable_feature(self, sensor, feature, interval_us):
+        """Enable a report, tolerating the BNO086's known extra startup bytes."""
+        try:
+            sensor.enable_feature(feature, interval_us)
+        except RuntimeError as exc:
+            if not exc.args or exc.args[0] != 'Unprocessable Batch bytes':
+                raise
+            self.get_logger().warning(
+                f'BNO086 returned extra startup bytes while enabling report '
+                f'0x{feature:02x}; continuing because the report command was sent')
 
     @staticmethod
     def _finite(values):
