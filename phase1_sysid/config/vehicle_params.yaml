@@ -122,14 +122,24 @@ sensors:
     yaw_offset: 0.0  # radians (mount rotation; confirm sensor forward-arrow points ahead)
 
   imu:
-    # From imu_calib.py: stationary for 1 minute (VESC 6 MkVI onboard IMU / BMI160)
-    gyro_bias: [-0.000346, -0.008216, -0.005997]  # rad/s (X, Y, Z axes) = [-0.02, -0.47, -0.34] deg/s
-    gyro_noise_std: 0.004072  # rad/s (~0.23 deg/s) — well under 0.1 rad/s target
+    # Production SparkFun BNO086 on Jetson I2C-7, address 0x4B. Stationary
+    # 60-second calibration on 2026-07-13, sampled from /imu/data at 50 Hz.
+    source: "bno086"
+    topic: "/imu/data"
+    orientation_mode: "game"  # no magnetometer; avoids motor/ESC heading jumps
+    publish_rate_hz: 50.0
+    gyro_bias: [-0.000003, 0.000005, 0.000005]  # rad/s (X, Y, Z)
+    gyro_noise_std: 0.002347  # mean axis standard deviation, rad/s
+    accel_bias: [0.2079, -0.4082, 9.6710]  # stationary mean including gravity, m/s²
+    accel_noise_std: 0.0422  # mean axis standard deviation, m/s²
+    # Stationary |accel| = 9.682 m/s², about 1.3% below standard gravity.
 
-    accel_bias: [0.2539, 0.7187, 10.4849]  # m/s² (Z reads 10.48 vs 9.81 -> ~6.9% scale high)
-    accel_noise_std: 0.0273  # m/s²
-    # NOTE: |accel| = 10.51 m/s² at rest vs 9.81 expected -> apply scale ~0.933 if using raw accel.
-    # X/Y ~0.76 m/s² suggests ~4 deg mount tilt or the car was not perfectly level.
+    backup_bmi160:
+      topic: "/sensors/imu"
+      gyro_bias: [-0.000346, -0.008216, -0.005997]  # rad/s
+      gyro_noise_std: 0.004072  # rad/s
+      accel_bias: [0.2539, 0.7187, 10.4849]  # stationary mean, m/s²
+      accel_noise_std: 0.0273  # m/s²
 
     mounting:
       x_offset: 0.0  # meters
