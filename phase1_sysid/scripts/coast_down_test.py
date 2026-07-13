@@ -163,12 +163,20 @@ class CoastDownTest(Node):
         self._detect_forward_imu_axis()
         self.get_logger().info("FREEWHEEL (current=0) — coasting...")
         start = time.time()
+        saw_moving_odom = False
         # publish current=0 continuously so the VESC stays in current mode at 0 torque
         while time.time() - start < self.coast_timeout_s:
             self._servo_center()
             self._current(0.0)
             rclpy.spin_once(self, timeout_sec=0.02)
-            if len(self.vel) > coast_start_idx + 5 and self.vel[-1] < 0.05:
+            coast_elapsed = time.time() - start
+            if len(self.vel) > coast_start_idx:
+                saw_moving_odom = saw_moving_odom or self.vel[-1] > 0.10
+            # Stale zero-speed messages can arrive immediately after switching
+            # VESC modes. Do not treat those as a stop until moving odometry has
+            # been observed and at least 0.5 s of freewheel data has elapsed.
+            if (coast_elapsed >= 0.5 and saw_moving_odom
+                    and self.vel[-1] < 0.05):
                 self.get_logger().info("Car stopped.")
                 break
 
