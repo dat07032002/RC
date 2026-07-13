@@ -67,6 +67,8 @@ so scripts have exclusive control. Verified mapping + watchdog work.
   launch produced wheel slip. First zero-current coast-down measured `-0.752 m/s²`
   from a `0.733 m/s` peak; repeat once because VESC odometry provided only three
   usable nonzero points. Use `[-0.65,-0.85] m/s²` for sim randomization meanwhile.
+  A same-speed repeat on 2026-07-13 was invalid for fitting: the first coast odom
+  arrived `0.728 s` late and only captured `0.387 m/s`; raw data is archived.
 - **Odometry — DONE**: tachometer-delta propagation replaces irregular speed integration;
   calibrated `speed_to_erpm_gain=4529.41`, correction factor `1.0`, and physical/reported
   straight distance validated.

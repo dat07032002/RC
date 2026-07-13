@@ -121,8 +121,10 @@ class CoastDownTest(Node):
         # crude overall slope (peak -> near-zero), for a quick number only
         # (the real fit uses the full curve below — decel is speed-dependent)
         i_lo = next((i for i, v in enumerate(cv) if v < 0.10), len(cv) - 1)
-        if ct[i_lo] > 0:
-            decel_magnitude = (cv[0] - cv[i_lo]) / ct[i_lo]
+        elapsed_from_first_sample = ct[i_lo] - ct[0]
+        if elapsed_from_first_sample > 0:
+            decel_magnitude = (
+                (cv[0] - cv[i_lo]) / elapsed_from_first_sample)
         else:
             decel_magnitude = 0.0
 
