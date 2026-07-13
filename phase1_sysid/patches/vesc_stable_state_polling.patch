@@ -1,0 +1,78 @@
+diff --git a/vesc_driver/include/vesc_driver/vesc_driver.hpp b/vesc_driver/include/vesc_driver/vesc_driver.hpp
+--- a/vesc_driver/include/vesc_driver/vesc_driver.hpp
++++ b/vesc_driver/include/vesc_driver/vesc_driver.hpp
+@@ -31,6 +31,7 @@
+ #ifndef VESC_DRIVER__VESC_DRIVER_HPP_
+ #define VESC_DRIVER__VESC_DRIVER_HPP_
+ 
++#include <atomic>
+ #include <rclcpp/rclcpp.hpp>
+ #include <std_msgs/msg/float64.hpp>
+ #include <sensor_msgs/msg/imu.hpp>
+@@ -110,7 +111,8 @@ private:
+   driver_mode_t driver_mode_;           ///< driver state machine mode (state)
+   int fw_version_major_;                ///< firmware major version reported by vesc
+   int fw_version_minor_;                ///< firmware minor version reported by vesc
+-  unsigned int telemetry_poll_count_;   ///< schedules state vs IMU serial requests
++  std::atomic<bool> state_request_pending_;  ///< true until a state response or timeout
++  std::atomic<int64_t> state_request_sent_ns_;  ///< request time for timeout recovery
+ 
+   // ROS callbacks
+   void brakeCallback(const Float64::SharedPtr brake);
+diff --git a/vesc_driver/src/vesc_driver.cpp b/vesc_driver/src/vesc_driver.cpp
+--- a/vesc_driver/src/vesc_driver.cpp
++++ b/vesc_driver/src/vesc_driver.cpp
+@@ -63,8 +63,9 @@ VescDriver::VescDriver(const rclcpp::NodeOptions & options)
+   servo_limit_(this, "servo", 0.0, 1.0),
+   driver_mode_(MODE_INITIALIZING),
+   fw_version_major_(-1),
+   fw_version_minor_(-1),
+-  telemetry_poll_count_(0)
++  state_request_pending_(false),
++  state_request_sent_ns_(0)
+ {
+   // get vesc serial port address
+   std::string port = declare_parameter<std::string>("port", "");
+@@ -108,7 +109,5 @@ VescDriver::VescDriver(const rclcpp::NodeOptions & options)
+-  // Motor-priority fallback schedule after bandwidth testing showed the VESC
+-  // request/response path cannot sustain the ~100 Hz IMU design target.
+-  // Four state requests and one compact IMU request per 50 Hz scheduler cycle.
+-  timer_ = create_wall_timer(20ms, std::bind(&VescDriver::timerCallback, this));
++  // Stable 20 Hz wheel telemetry. The external BNO086 supplies IMU data.
++  timer_ = create_wall_timer(50ms, std::bind(&VescDriver::timerCallback, this));
+ }
+ 
+ /* TODO or TO-THINKABOUT LIST
+@@ -150,10 +149,20 @@ void VescDriver::timerCallback()
+   } else if (driver_mode_ == MODE_OPERATING) {
+-    // Issue only one request per tick, prioritizing wheel/motor telemetry.
+-    if ((telemetry_poll_count_++ % 5) == 4) {
+-      vesc_.requestImuData();
+-    } else {
+-      vesc_.requestState();
++    // Never queue requests faster than the serial request/response path.
++    // Recover if one response is lost rather than stalling indefinitely.
++    const int64_t current_time_ns = now().nanoseconds();
++    if (state_request_pending_.load()) {
++      const int64_t elapsed_ns = current_time_ns - state_request_sent_ns_.load();
++      if (elapsed_ns < 200000000LL) {
++        return;
++      }
++      RCLCPP_WARN_THROTTLE(
++        get_logger(), *get_clock(), 5000,
++        "VESC state response timed out after 200 ms; retrying");
++      state_request_pending_.store(false);
+     }
++    state_request_sent_ns_.store(current_time_ns);
++    state_request_pending_.store(true);
++    vesc_.requestState();
+   } else {
+     // unknown mode, how did that happen?
+     assert(false && "unknown driver mode");
+@@ -163,5 +172,6 @@ void VescDriver::vescPacketCallback(const std::shared_ptr<VescPacket const> & packet)
+ {
+   if (packet->name() == "Values") {
++    state_request_pending_.store(false);
+     std::shared_ptr<VescPacketValues const> values =
+       std::dynamic_pointer_cast<VescPacketValues const>(packet);
+ 

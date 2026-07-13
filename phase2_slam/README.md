@@ -4,6 +4,12 @@ The launch file brings up the VESC, wheel odometry, Hokuyo LiDAR, 8BitDo
 teleoperation, BNO086, TF, and `slam_toolbox` in online asynchronous mapping
 mode. Full joystick command is capped at 1.0 m/s.
 
+Install the user-owned `robot_localization` overlay once on the Jetson:
+
+```bash
+bash ~/RC/phase2_slam/scripts/install_robot_localization_overlay.sh
+```
+
 Run on the Jetson from a clean process state:
 
 ```bash
@@ -17,7 +23,7 @@ In another terminal, record the mapping inputs:
 ```bash
 mkdir -p ~/bags ~/maps
 ros2 bag record -o ~/bags/school_room_mapping \
-  /scan /odom /tf /tf_static /imu/data /teleop /ackermann_cmd
+  /scan /wheel/odom /odom /tf /tf_static /imu/data /teleop /ackermann_cmd
 ```
 
 After completing the perimeter, crossing the room, and returning to the exact
