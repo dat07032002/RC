@@ -1,7 +1,7 @@
 diff --git a/vesc_ackermann/src/vesc_to_odom.cpp b/vesc_ackermann/src/vesc_to_odom.cpp
 --- a/vesc_ackermann/src/vesc_to_odom.cpp
 +++ b/vesc_ackermann/src/vesc_to_odom.cpp
-@@ -55,9 +55,12 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
+@@ -55,8 +55,9 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
  {
    // get ROS parameters
 -  declare_parameter("odom_frame", odom_frame_);
@@ -14,7 +14,7 @@ diff --git a/vesc_ackermann/src/vesc_to_odom.cpp b/vesc_ackermann/src/vesc_to_od
  
    speed_to_erpm_gain_ = declare_parameter<double>("speed_to_erpm_gain");
    speed_to_erpm_offset_ = declare_parameter<double>("speed_to_erpm_offset");
-@@ -72,7 +75,7 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
+@@ -72,7 +73,7 @@ VescToOdom::VescToOdom(const rclcpp::NodeOptions & options)
      wheelbase_ = declare_parameter<double>("wheelbase");
    }
  
