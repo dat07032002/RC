@@ -93,6 +93,44 @@ Keep the car **stationary and level** for ~1 minute. Records gyro bias,
 accel bias (Z should be ~9.81; measured ~10.6 raw -> needs the bias/scale
 this test produces), and noise std.
 
+## 7. External BNO086 (production IMU)
+The SparkFun BNO086 is wired to Jetson header I2C bus 7 and publishes
+`sensor_msgs/Imu` on `/imu/data`. Install its userspace driver once:
+```bash
+python3 -m pip install --user adafruit-blinka adafruit-circuitpython-bno08x
+```
+
+Test the IMU by itself before starting the car stack:
+```bash
+source /opt/ros/humble/setup.bash
+python3 ~/RC/phase1_sysid/scripts/bno086_node.py --ros-args \
+    -p i2c_bus:=7 -p i2c_address:=75 -p orientation_mode:=game
+```
+
+In another terminal:
+```bash
+source /opt/ros/humble/setup.bash
+ros2 topic hz /imu/data
+ros2 topic echo /imu/data --once
+```
+
+`orientation_mode:=game` is the default because it ignores the magnetometer and avoids
+heading jumps from the motor, ESC, battery wiring, and steel chassis. After checking for
+magnetic interference with the wheels raised, use `orientation_mode:=rotation` only if an
+absolute magnetometer-referenced heading is needed.
+
+Enable the BNO086 in the Phase 1 bringup with:
+```bash
+ros2 launch ~/RC/phase1_sysid/config/sysid_bringup.launch.py \
+    max_speed_mps:=1.0 use_bno086:=true
+```
+
+Calibrate the external IMU with:
+```bash
+python3 ~/RC/phase1_sysid/scripts/imu_calib.py \
+    --ros-args -r /imu:=/imu/data
+```
+
 ## Record everything
 ```bash
 ros2 bag record -a -o sysid_$(date +%H%M)
