@@ -168,6 +168,10 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
     lookahead_m: float = 2.0           # goal waypoint distance along centerline
 
     # --- runtime DR (per-env, resampled each reset; SYSTEM_DESIGN section 7) ---
+    # dr_level scales ALL stress axes (0 = clean, 1 = full R4 stress). The
+    # ranges below are the dr_level=1.0 endpoints. Curriculum: R1-R3 train/gate
+    # at moderate stress (~0.3); R4 ramps to 1.0.
+    dr_level: float = 1.0
     dr_delay_steps = (1, 3)            # action delay 50-150 ms at 20 Hz control
     dr_speed_scale = (0.7, 1.3)        # v_max/a_max ±30% (capped-test uncertainty)
     dr_noise_mult = (1.0, 10.0)        # x measured lidar noise (up to ~5 cm @ 5 m)
@@ -735,26 +739,31 @@ class RoboracerEnv(DirectRLEnv):
         self.crashed[env_ids] = False
         self.reached_goal[env_ids] = False
         # resample per-env DR (delay, dynamics scale, sensor/localization noise)
+        # all ranges interpolated toward their max endpoint by cfg.dr_level
         k = len(env_ids)
         cfg = self.cfg
         dev = self.device
+        L = cfg.dr_level
+        delay_hi = 1 + round((cfg.dr_delay_steps[1] - 1) * L)
         self.delay_e[env_ids] = torch.randint(
-            cfg.dr_delay_steps[0], cfg.dr_delay_steps[1] + 1, (k,), device=dev)
+            cfg.dr_delay_steps[0], delay_hi + 1, (k,), device=dev)
+        spread = (cfg.dr_speed_scale[1] - 1.0) * L        # symmetric around 1
         self.vmax_e[env_ids] = cfg.v_max * (
-            cfg.dr_speed_scale[0] + torch.rand(k, device=dev)
-            * (cfg.dr_speed_scale[1] - cfg.dr_speed_scale[0]))
+            1.0 - spread + torch.rand(k, device=dev) * 2 * spread)
         self.amax_e[env_ids] = cfg.a_max * (
-            cfg.dr_speed_scale[0] + torch.rand(k, device=dev)
-            * (cfg.dr_speed_scale[1] - cfg.dr_speed_scale[0]))
+            1.0 - spread + torch.rand(k, device=dev) * 2 * spread)
+        nm_hi = 1.0 + (cfg.dr_noise_mult[1] - 1.0) * L
         self.noise_mult_e[env_ids] = cfg.dr_noise_mult[0] + torch.rand(k, device=dev) \
-            * (cfg.dr_noise_mult[1] - cfg.dr_noise_mult[0])
+            * (nm_hi - cfg.dr_noise_mult[0])
+        bn_hi = cfg.dr_goal_bearing_noise[0] \
+            + (cfg.dr_goal_bearing_noise[1] - cfg.dr_goal_bearing_noise[0]) * L
         self.bearing_noise_e[env_ids] = cfg.dr_goal_bearing_noise[0] \
-            + torch.rand(k, device=dev) \
-            * (cfg.dr_goal_bearing_noise[1] - cfg.dr_goal_bearing_noise[0])
+            + torch.rand(k, device=dev) * (bn_hi - cfg.dr_goal_bearing_noise[0])
         # estimator drift: per-env OU step size; start at the stationary
         # distribution (episodes begin mid-drift, like a real run)
+        dr_hi = cfg.dr_goal_drift[0] + (cfg.dr_goal_drift[1] - cfg.dr_goal_drift[0]) * L
         self.drift_e[env_ids] = cfg.dr_goal_drift[0] + torch.rand(k, device=dev) \
-            * (cfg.dr_goal_drift[1] - cfg.dr_goal_drift[0])
+            * (dr_hi - cfg.dr_goal_drift[0])
         stat_std = self.drift_e[env_ids] / math.sqrt(2.0 * cfg.goal_drift_pull)
         self.bearing_bias[env_ids] = torch.randn(k, device=dev) * stat_std
         self.dist_bias[env_ids] = torch.randn(k, device=dev) * stat_std * 0.5

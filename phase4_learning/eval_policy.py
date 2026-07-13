@@ -24,6 +24,10 @@ parser.add_argument("--track_type", type=str, default="room", choices=["corridor
 parser.add_argument("--obstacles", type=str, default="")
 parser.add_argument("--obstacle_size", type=str, default="",
                     help="'lo,hi' box side range override (diagnostics)")
+parser.add_argument("--dr_level", type=float, default=1.0,
+                    help="DR stress 0..1 (curriculum: R1-R3 gate at 0.3, R4 at 1.0)")
+parser.add_argument("--vmax", type=float, default=0.0,
+                    help="override v_max (m/s) — speed-discipline diagnostics / deployment-cap preview")
 parser.add_argument("--seed", type=int, default=1234, help="held-out eval seed")
 parser.add_argument(
     "--vehicle_params", type=str,
@@ -88,6 +92,9 @@ def main():
     if args_cli.obstacle_size:
         lo, hi = (float(x) for x in args_cli.obstacle_size.split(","))
         cfg.dr_room_obstacle_size = (lo, hi)
+    cfg.dr_level = args_cli.dr_level
+    if args_cli.vmax > 0:
+        cfg.v_max = args_cli.vmax  # obs normalization scales with it -> semantics preserved
     cfg.scene.num_envs = args_cli.num_envs
     cfg.seed = args_cli.seed
 
