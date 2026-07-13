@@ -64,11 +64,12 @@ so scripts have exclusive control. Verified mapping + watchdog work.
   `-0.9194/-0.8842`. Slew/settle measured; absolute command delay remains optional.
 - **Throttle — DONE provisionally**: controller cap validated near `2.0 m/s`, peak `2.12 m/s`.
   Accepted acceleration estimate `3.5 m/s²` with `[2.5,4.5]` randomization because a hard
-  launch produced wheel slip. Final zero-current coast-down with synchronized
-  BNO086 acceleration measured `-0.611 m/s²`: integrated Δv was `-0.777 m/s`
-  over `1.272 s`, consistent with the commanded `0.8 m/s` start. Use
-  `[-0.50,-0.75] m/s²` for sim randomization. The first sparse VESC-odom-only
-  fit was `-0.752 m/s²` and is retained only as a cross-check.
+  launch produced wheel slip. Two zero-current coast-downs with synchronized
+  BNO086 acceleration measured `-0.611 m/s²` from `0.777 m/s` and `-0.629 m/s²`
+  from `1.046 m/s`. Use the mean `-0.620 m/s²` and `[-0.50,-0.75] m/s²`
+  for sim randomization. The 3% speed-to-speed change is within measurement
+  variation, so aero drag is not significant in this range. The first sparse
+  VESC-odom-only fit was `-0.752 m/s²` and is retained only as a cross-check.
   A same-speed repeat on 2026-07-13 was invalid for fitting: the first coast odom
   arrived `0.728 s` late and only captured `0.387 m/s`; raw data is archived.
 - **Odometry — DONE**: tachometer-delta propagation replaces irregular speed integration;

@@ -79,7 +79,7 @@ was not as straight.
 - Throttle: at low cap, `max_velocity 0.57 m/s`, `max_acceleration 0.61 m/s^2`.
 - Odometry: `distance_correction_factor 1.035`, `velocity_correction_factor 1.035`.
 - Latency: LiDAR-to-odom mean about `11 ms`; LiDAR frequency about `40 Hz`.
-- Coast-down friction: `-0.611 m/s²` from synchronized BNO086 acceleration.
+- Coast-down friction: `-0.620 m/s²` two-run mean from synchronized BNO086 acceleration.
 - Remaining: servo response delay/rate and better mass.
 
 ## 6. IMU calibration  — ✅ now works (patched vesc_driver)
