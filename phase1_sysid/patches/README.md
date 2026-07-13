@@ -1,24 +1,36 @@
-# vesc_driver patch (IMU + Humble compat)
+# VESC source patches
 
-`vesc_driver_imu.patch` applies to the **f1tenth/vesc** repo (the `vesc`
-submodule of `f1tenth_system`). It contains the local changes needed on this
-Jetson:
+`vesc_mapping_stack.patch` is the consolidated patch for a fresh
+`f1tenth/vesc` checkout. It includes:
 
-1. **IMU support** — request `COMM_GET_IMU_DATA` and publish `sensor_msgs/Imu`
-   on `/sensors/imu` from the VESC 6 MkVI's onboard IMU (accel in m/s²,
-   angular rate in rad/s, orientation quaternion when AHRS is enabled).
-2. **Humble build fixes** — `declare_parameter<T>()` template form, and the
-   servo subscription type fix in `vesc_to_odom`.
+1. ROS 2 Humble parameter and message-type compatibility fixes.
+2. Direction-specific steering calibration support.
+3. Tachometer-delta wheel odometry and correct TF parameter loading.
+4. VESC onboard IMU decoding for optional diagnostics.
+5. State-only 20 Hz polling with `COMM_GET_VALUES_SELECTIVE`, requesting only
+   RPM, voltage, tachometers, and fault status. The production BNO086 supplies
+   the mapping IMU.
+
+The older individual patch files are retained as development history. Do not
+stack them with the consolidated patch on a fresh checkout.
 
 ## Apply on a fresh checkout
+
 ```bash
 cd ~/f1tenth_ws/src/f1tenth_system/vesc
-git apply ~/RC/phase1_sysid/patches/vesc_driver_imu.patch
-git apply ~/RC/phase1_sysid/patches/vesc_to_odom_publish_tf.patch
-git apply ~/RC/phase1_sysid/patches/vesc_stable_state_polling.patch
+git apply ~/RC/phase1_sysid/patches/vesc_mapping_stack.patch
 cd ~/f1tenth_ws
 colcon build --symlink-install --packages-select vesc_driver vesc_ackermann
 ```
 
-Verify: `ros2 topic echo /sensors/imu` should show gravity (~9.8 m/s²) on one
-accel axis while the car is level and still.
+## Verify
+
+With the car stationary and a zero-speed command active:
+
+```bash
+ros2 topic hz /sensors/core
+ros2 topic hz /wheel/odom
+ros2 topic hz /odom
+```
+
+Targets are about 20 Hz raw VESC/wheel odometry and 30 Hz EKF odometry.
