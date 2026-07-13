@@ -188,6 +188,11 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
     rew_goal: float = 10.0
     rew_clearance: float = 1.0         # penalty slope inside clearance_dist
     clearance_dist: float = 0.25       # start penalizing below this wall distance
+    # room mode: freezing was measured as a learned behavior (standstill = 0
+    # reward beats risky motion near clutter; video-confirmed at R2d). Time
+    # penalty makes idling bleed: timeout costs ~-18, so finishing is the only
+    # way to stop paying. Sized so success (+10+shaping) still dominates.
+    rew_time_penalty: float = 0.015
 
     max_wall_segments: int = 48        # corridor: 24+obstacles; room: 4+10x4
     max_centerline_pts: int = 12
@@ -682,6 +687,7 @@ class RoboracerEnv(DirectRLEnv):
             shaping = self.cfg.rew_progress * (
                 self.prev_goal_dist - self.cfg.rew_gamma * d)
             self.prev_goal_dist = d
+            shaping = shaping - self.cfg.rew_time_penalty  # idling must bleed
             ds = torch.zeros_like(d)  # corridor arc-progress unused
         else:
             s = self._arc_progress()

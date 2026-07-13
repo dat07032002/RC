@@ -21,6 +21,9 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--seed", type=int, default=3)
 parser.add_argument("--steps", type=int, default=500)
 parser.add_argument("--out", type=str, default="/tmp/roboracer_room.mp4")
+parser.add_argument("--checkpoint", type=str, default="",
+                    help="trained policy .pt; empty = heuristic driver")
+parser.add_argument("--obstacles", type=str, default="", help="'lo,hi' override")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 app_launcher = AppLauncher(args_cli)
@@ -54,10 +57,39 @@ def yaw_quat(yaw):
     return (math.cos(yaw / 2), 0.0, 0.0, math.sin(yaw / 2))
 
 
+def load_policy(env):
+    """Wrap env and load the trained recurrent policy (must match trainer)."""
+    from rsl_rl.runners import OnPolicyRunner
+    from isaaclab_rl.rsl_rl import (
+        RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticRecurrentCfg,
+        RslRlPpoAlgorithmCfg, RslRlVecEnvWrapper)
+    wrapped = RslRlVecEnvWrapper(env)
+    agent_cfg = RslRlOnPolicyRunnerCfg(
+        seed=0, device="cuda:0", num_steps_per_env=64, max_iterations=1,
+        save_interval=100, experiment_name="showcase",
+        empirical_normalization=True,
+        policy=RslRlPpoActorCriticRecurrentCfg(
+            init_noise_std=1.0, actor_hidden_dims=[256, 128],
+            critic_hidden_dims=[256, 128], activation="elu",
+            rnn_type="gru", rnn_hidden_dim=256, rnn_num_layers=1),
+        algorithm=RslRlPpoAlgorithmCfg(
+            value_loss_coef=1.0, use_clipped_value_loss=True, clip_param=0.2,
+            entropy_coef=0.01, num_learning_epochs=5, num_mini_batches=4,
+            learning_rate=5.0e-4, schedule="adaptive", gamma=0.99, lam=0.95,
+            desired_kl=0.01, max_grad_norm=1.0),
+    )
+    runner = OnPolicyRunner(wrapped, agent_cfg.to_dict(), log_dir=None, device="cuda:0")
+    runner.load(args_cli.checkpoint)
+    return wrapped, runner.get_inference_policy(device="cuda:0")
+
+
 def main():
     # pre-generate the same room the env will produce (same rng sequence)
     cfg = RoboracerEnvCfg()
     cfg.track_type = "room"
+    if args_cli.obstacles:
+        lo, hi = (int(x) for x in args_cli.obstacles.split(","))
+        cfg.dr_room_obstacles = (lo, hi)
     cfg.scene.num_envs = 1
     preview_walls, _, preview_goal, sp_len = generate_room(
         np.random.default_rng(args_cli.seed), cfg)
@@ -100,26 +132,37 @@ def main():
             visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.82, 0.19, 0.10)))},
     ))
 
+    policy = None
+    if args_cli.checkpoint:
+        wrapped, policy = load_policy(env)
+        p_obs, _ = wrapped.get_observations()
+        print(f"[Room] driving with policy: {args_cli.checkpoint}")
+
     frames = []
     for i in range(args_cli.steps):
-        obs = env._get_observations()["policy"]
-        rays = obs[0, : cfg.num_rays] * cfg.lidar_max_range
-        n = rays.shape[0]
-        angles = torch.linspace(-135.0, 135.0, n, device=env.device)
-        # goal-seek with gap avoidance
-        sin_b, cos_b = float(obs[0, -2]), float(obs[0, -1])
-        goal_bearing = math.degrees(math.atan2(sin_b, cos_b))
-        front = (angles - goal_bearing).abs() <= 30.0
-        blocked = float(rays[front].min()) < 0.9 if front.any() else True
-        if blocked:
-            open_dirs = (angles.abs() <= 90.0)
-            masked = torch.where(open_dirs, rays, torch.zeros_like(rays))
-            target = float(angles[masked.argmax()])
+        if policy is not None:
+            with torch.no_grad():
+                act = policy(p_obs)
+            p_obs, _, _, _ = wrapped.step(act)
         else:
-            target = goal_bearing
-        steer = max(-1.0, min(1.0, target / 25.0))
-        act = torch.tensor([[steer, -0.5]], device=env.device)  # ~0.25 throttle
-        env.step(act)
+            obs = env._get_observations()["policy"]
+            rays = obs[0, : cfg.num_rays] * cfg.lidar_max_range
+            n = rays.shape[0]
+            angles = torch.linspace(-135.0, 135.0, n, device=env.device)
+            # goal-seek with gap avoidance
+            sin_b, cos_b = float(obs[0, -2]), float(obs[0, -1])
+            goal_bearing = math.degrees(math.atan2(sin_b, cos_b))
+            front = (angles - goal_bearing).abs() <= 30.0
+            blocked = float(rays[front].min()) < 0.9 if front.any() else True
+            if blocked:
+                open_dirs = (angles.abs() <= 90.0)
+                masked = torch.where(open_dirs, rays, torch.zeros_like(rays))
+                target = float(angles[masked.argmax()])
+            else:
+                target = goal_bearing
+            steer = max(-1.0, min(1.0, target / 25.0))
+            act = torch.tensor([[steer, -0.5]], device=env.device)  # ~0.25 throttle
+            env.step(act)
         x, y, yaw = env.car_state[0, 0], env.car_state[0, 1], env.car_state[0, 2]
         car_marker.visualize(
             translations=torch.tensor([[float(x), float(y), 0.06]], device=env.device),
