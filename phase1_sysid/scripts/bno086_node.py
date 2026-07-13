@@ -2,11 +2,17 @@
 """Publish SparkFun BNO086 measurements as a ROS 2 sensor_msgs/Imu message."""
 
 import math
+import os
 import time
 
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
+
+# JetPack 6.2 identifies the current carrier as an "Engineering Reference
+# Developer Kit Super", which Blinka 9.1 does not auto-detect yet. The pin map is
+# the standard Orin Nano/NX map. Preserve an explicit user override if one exists.
+os.environ.setdefault('BLINKA_FORCEBOARD', 'JETSON_ORIN_NANO')
 
 try:
     from adafruit_bno08x import (
