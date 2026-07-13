@@ -122,13 +122,14 @@ class CoastDownTest(Node):
         # (the real fit uses the full curve below — decel is speed-dependent)
         i_lo = next((i for i, v in enumerate(cv) if v < 0.10), len(cv) - 1)
         if ct[i_lo] > 0:
-            a_avg = -(cv[0] - cv[i_lo]) / ct[i_lo]
+            decel_magnitude = (cv[0] - cv[i_lo]) / ct[i_lo]
         else:
-            a_avg = 0.0
+            decel_magnitude = 0.0
 
         self.get_logger().info("\nCoast-down results:")
         self.get_logger().info(f"  Peak (coast start): {v_peak:.2f} m/s")
-        self.get_logger().info(f"  Avg decel (crude):  {a_avg:.2f} m/s^2")
+        self.get_logger().info(
+            f"  Avg decel magnitude: {decel_magnitude:.2f} m/s^2")
         print("\n-> Send me this curve; I'll fit rolling vs aero drag "
               "(decel vs speed) for TIRE_FRICTION.")
         print(f"\nCoast-down curve (peak {v_peak:.2f} m/s):")

@@ -64,7 +64,9 @@ so scripts have exclusive control. Verified mapping + watchdog work.
   `-0.9194/-0.8842`. Slew/settle measured; absolute command delay remains optional.
 - **Throttle — DONE provisionally**: controller cap validated near `2.0 m/s`, peak `2.12 m/s`.
   Accepted acceleration estimate `3.5 m/s²` with `[2.5,4.5]` randomization because a hard
-  launch produced wheel slip. Coast-down friction remains open.
+  launch produced wheel slip. First zero-current coast-down measured `-0.752 m/s²`
+  from a `0.733 m/s` peak; repeat once because VESC odometry provided only three
+  usable nonzero points. Use `[-0.65,-0.85] m/s²` for sim randomization meanwhile.
 - **Odometry — DONE**: tachometer-delta propagation replaces irregular speed integration;
   calibrated `speed_to_erpm_gain=4529.41`, correction factor `1.0`, and physical/reported
   straight distance validated.
@@ -104,7 +106,7 @@ so scripts have exclusive control. Verified mapping + watchdog work.
   distance-correct across gaps; these rates are diagnostic, not sufficient for the EKF.
 
 ## Next tests
-1. Coast-down friction with the dedicated zero-current/freewheel script and long runout.
+1. Repeat the coast-down friction run once to tighten the sparse first estimate.
 2. Optional external-reference acceleration measurement to replace the estimate.
 3. Optional improved servo video with command time-zero to replace the placeholder
    absolute response delay.
