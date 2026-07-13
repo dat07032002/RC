@@ -285,7 +285,11 @@ def generate_corridor(rng: np.random.Generator, cfg: RoboracerEnvCfg):
 # obstacles, random spawn pose + goal with guaranteed reachability.
 # Returns walls [S,4], spawn [x,y,yaw], goal [x,y], shortest_path_len (m).
 # ---------------------------------------------------------------------------
-def _room_flood_fill(W, H, obstacles, start, goal, res=0.2, inflate=0.25):
+def _room_flood_fill(W, H, obstacles, start, goal, res=0.2, inflate=0.40):
+    # inflate=0.40 -> certified paths are >=0.8 m wide. The flood fill is a
+    # HOLONOMIC check; the car has R_min=0.71 m and cannot thread the 0.5 m
+    # S-gaps a 0.25 inflation certifies (measured: R2 success ceiling ~60%
+    # partly from kinematically-unwinnable worlds).
     """BFS on a coarse grid; returns shortest path length in meters or None."""
     nx, ny = max(int(W / res), 2), max(int(H / res), 2)
     occ = np.zeros((nx, ny), dtype=bool)
