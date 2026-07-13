@@ -55,11 +55,12 @@ throttle:
   # wheel slip (wheel odometry cannot measure chassis acceleration under slip).
   max_acceleration: 3.5  # m/s²; use 2.5-4.5 m/s² domain randomization until external measurement
 
-  # Measured 2026-07-13 with VESC zero-current freewheel: peak 0.733 m/s,
-  # stopped by 0.986 s after peak. Linear fit over the three usable odom points
-  # gives -0.752 m/s² (effective resistance ratio |a|/g = 0.077). The VESC odom
-  # was sparse, so repeat and use roughly [-0.65, -0.85] m/s² for sim DR.
-  friction_coefficient: -0.752  # m/s² coast-down acceleration
+  # Measured 2026-07-13 with VESC zero-current freewheel and the BNO086 at
+  # ~103 Hz. Integrated forward acceleration lost 0.777 m/s in 1.272 s,
+  # consistent with the commanded 0.8 m/s start. Mean coast acceleration was
+  # -0.611 m/s² (median active acceleration -0.591 m/s²). Use roughly
+  # [-0.50, -0.75] m/s² for sim DR. Sparse VESC odom alone overestimated -0.752.
+  friction_coefficient: -0.611  # m/s² coast-down acceleration
   # Brake decel datapoint: controller test stopped from ~2 m/s in ~0.25 m
   # overshoot -> VESC watchdog braking ~4-9 m/s². Safety layer keeps 1.5
   # (conservative); sim brake DR 3-8 when braking is modeled.

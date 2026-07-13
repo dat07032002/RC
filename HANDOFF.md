@@ -64,9 +64,11 @@ so scripts have exclusive control. Verified mapping + watchdog work.
   `-0.9194/-0.8842`. Slew/settle measured; absolute command delay remains optional.
 - **Throttle — DONE provisionally**: controller cap validated near `2.0 m/s`, peak `2.12 m/s`.
   Accepted acceleration estimate `3.5 m/s²` with `[2.5,4.5]` randomization because a hard
-  launch produced wheel slip. First zero-current coast-down measured `-0.752 m/s²`
-  from a `0.733 m/s` peak; repeat once because VESC odometry provided only three
-  usable nonzero points. Use `[-0.65,-0.85] m/s²` for sim randomization meanwhile.
+  launch produced wheel slip. Final zero-current coast-down with synchronized
+  BNO086 acceleration measured `-0.611 m/s²`: integrated Δv was `-0.777 m/s`
+  over `1.272 s`, consistent with the commanded `0.8 m/s` start. Use
+  `[-0.50,-0.75] m/s²` for sim randomization. The first sparse VESC-odom-only
+  fit was `-0.752 m/s²` and is retained only as a cross-check.
   A same-speed repeat on 2026-07-13 was invalid for fitting: the first coast odom
   arrived `0.728 s` late and only captured `0.387 m/s`; raw data is archived.
 - **Odometry — DONE**: tachometer-delta propagation replaces irregular speed integration;
@@ -108,9 +110,8 @@ so scripts have exclusive control. Verified mapping + watchdog work.
   distance-correct across gaps; these rates are diagnostic, not sufficient for the EKF.
 
 ## Next tests
-1. Repeat the coast-down friction run once to tighten the sparse first estimate.
-2. Optional external-reference acceleration measurement to replace the estimate.
-3. Optional improved servo video with command time-zero to replace the placeholder
+1. Optional external-reference acceleration measurement to replace the acceleration estimate.
+2. Optional improved servo video with command time-zero to replace the placeholder
    absolute response delay.
 
 ## Operational gotchas
