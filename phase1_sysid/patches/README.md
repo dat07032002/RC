@@ -14,6 +14,7 @@ Jetson:
 ```bash
 cd ~/f1tenth_ws/src/f1tenth_system/vesc
 git apply ~/RC/phase1_sysid/patches/vesc_driver_imu.patch
+git apply ~/RC/phase1_sysid/patches/vesc_to_odom_publish_tf.patch
 cd ~/f1tenth_ws
 colcon build --symlink-install --packages-select vesc_driver vesc_ackermann
 ```
