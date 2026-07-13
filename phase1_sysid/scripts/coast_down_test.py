@@ -190,33 +190,32 @@ class CoastDownTest(Node):
             rclpy.spin_once(self, timeout_sec=0.02)
 
     def report(self, coast_start_idx, coast_t0):
-        if len(self.vel) - coast_start_idx < 5:
-            self.get_logger().error("Not enough coast data — check /odom is publishing.")
-            return
         ct = [t - coast_t0 for t in self.t[coast_start_idx:]]
         cv = self.vel[coast_start_idx:]
-        v_peak = max(cv[:5])
+        if len(cv) >= 5:
+            v_peak = max(cv[:5])
+            # Crude overall slope (peak -> near-zero), for a quick number only.
+            i_lo = next((i for i, v in enumerate(cv) if v < 0.10), len(cv) - 1)
+            elapsed_from_first_sample = ct[i_lo] - ct[0]
+            if elapsed_from_first_sample > 0:
+                decel_magnitude = (
+                    (cv[0] - cv[i_lo]) / elapsed_from_first_sample)
+            else:
+                decel_magnitude = 0.0
 
-        # crude overall slope (peak -> near-zero), for a quick number only
-        # (the real fit uses the full curve below — decel is speed-dependent)
-        i_lo = next((i for i, v in enumerate(cv) if v < 0.10), len(cv) - 1)
-        elapsed_from_first_sample = ct[i_lo] - ct[0]
-        if elapsed_from_first_sample > 0:
-            decel_magnitude = (
-                (cv[0] - cv[i_lo]) / elapsed_from_first_sample)
+            self.get_logger().info("\nCoast-down results:")
+            self.get_logger().info(f"  Peak (coast start): {v_peak:.2f} m/s")
+            self.get_logger().info(
+                f"  Avg decel magnitude: {decel_magnitude:.2f} m/s^2")
+            print("\n-> Send me this curve; I'll fit rolling vs aero drag "
+                  "(decel vs speed) for TIRE_FRICTION.")
+            print(f"\nCoast-down curve (peak {v_peak:.2f} m/s):")
+            print("t_coast(s)\tv(m/s)")
+            for t, v in zip(ct, cv):
+                print(f"{t:.3f}\t{v:.3f}")
         else:
-            decel_magnitude = 0.0
-
-        self.get_logger().info("\nCoast-down results:")
-        self.get_logger().info(f"  Peak (coast start): {v_peak:.2f} m/s")
-        self.get_logger().info(
-            f"  Avg decel magnitude: {decel_magnitude:.2f} m/s^2")
-        print("\n-> Send me this curve; I'll fit rolling vs aero drag "
-              "(decel vs speed) for TIRE_FRICTION.")
-        print(f"\nCoast-down curve (peak {v_peak:.2f} m/s):")
-        print("t_coast(s)\tv(m/s)")
-        for t, v in zip(ct, cv):
-            print(f"{t:.3f}\t{v:.3f}")
+            self.get_logger().warn(
+                "Not enough coast odometry; reporting BNO086 data independently.")
 
         imu_curve = []
         if self.imu_baseline is not None and self.imu_forward_axis is not None:
