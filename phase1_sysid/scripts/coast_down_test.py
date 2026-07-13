@@ -158,6 +158,10 @@ def main():
     print("\nWaiting for first odometry message...")
     t_wait = time.time()
     while not node.vel and time.time() - t_wait < 3.0:
+        # vesc_to_odom only publishes while a servo command is present. Send the
+        # calibrated center command during startup to avoid waiting forever for
+        # an odometry message that cannot otherwise be produced.
+        node._servo_center()
         rclpy.spin_once(node, timeout_sec=0.1)
     if not node.vel:
         node.get_logger().warn(
