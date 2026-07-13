@@ -13,6 +13,7 @@ from sensor_msgs.msg import Imu
 # Developer Kit Super", which Blinka 9.1 does not auto-detect yet. The pin map is
 # the standard Orin Nano/NX map. Preserve an explicit user override if one exists.
 os.environ.setdefault('BLINKA_FORCEBOARD', 'JETSON_ORIN_NANO')
+os.environ.setdefault('JETSON_MODEL_NAME', 'JETSON_ORIN_NANO')
 
 try:
     from adafruit_bno08x import (
