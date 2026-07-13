@@ -97,7 +97,8 @@ this test produces), and noise std.
 The SparkFun BNO086 is wired to Jetson header I2C bus 7 and publishes
 `sensor_msgs/Imu` on `/imu/data`. Install its userspace driver once:
 ```bash
-python3 -m pip install --user adafruit-blinka adafruit-circuitpython-bno08x
+python3 -m pip install --user adafruit-blinka adafruit-extended-bus \
+    adafruit-circuitpython-bno08x
 ```
 
 Test the IMU by itself before starting the car stack:

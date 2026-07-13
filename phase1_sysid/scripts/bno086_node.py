@@ -27,7 +27,7 @@ try:
 except ImportError as exc:
     raise SystemExit(
         "Missing BNO086 Python dependencies. Install with: "
-        "python3 -m pip install --user adafruit-blinka "
+        "python3 -m pip install --user adafruit-blinka adafruit-extended-bus "
         "adafruit-circuitpython-bno08x"
     ) from exc
 
