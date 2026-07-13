@@ -98,8 +98,8 @@ notes: straight / veered / slipped / obstacle / aborted
 ```
 
 Pass criteria:
-- Correction factors are close to the saved value, currently about `1.035` from the
-  earlier calibration context.
+- Correction factors are close to the saved value, currently `1.0` after the latest
+  calibration runs.
 - Reject runs where the car visibly veered, slipped, or hit an obstacle.
 
 ## 4. Mapping Run
