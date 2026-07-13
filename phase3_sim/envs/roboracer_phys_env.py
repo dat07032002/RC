@@ -111,13 +111,15 @@ class RoboracerPhysEnv(RoboracerEnv):
             steer_action * self.steer_left_max_rad,
             steer_action * self.steer_right_max_rad,
         )
-        throttle = (self._act[:, 1] + 1.0) / 2.0
+        thr = self._act[:, 1]
 
         # servo lag (measured tau) applied to the position target
         self._steer_state = self._steer_state + (
             steer_cmd - self._steer_state) * dt / self.cfg.steer_tau_s
-        # accel-limited speed target (measured a_max), like the real slew limiter
-        v_cmd = throttle * self.cfg.v_max
+        # accel-limited speed target; negative = brake-through-zero then
+        # reverse, capped (rear-blind LiDAR — recovery maneuvers only)
+        v_cmd = torch.where(
+            thr >= 0, thr, thr * self.cfg.reverse_speed_frac) * self.cfg.v_max
         dv = (v_cmd - self._v_target).clamp(-self.cfg.a_max * dt, self.cfg.a_max * dt)
         self._v_target = self._v_target + dv
 

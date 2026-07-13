@@ -185,6 +185,10 @@ class RoboracerEnvCfg(DirectRLEnvCfg):
     goal_drift_pull = 0.02                  # OU mean reversion per step
     reloc_jump_prob = 0.003                 # ~1 correction per 17 s per env
 
+    # reverse gear: real VESC is bidirectional; capped low because the 270°
+    # LiDAR is rear-blind — reverse is for short recovery maneuvers only
+    reverse_speed_frac: float = 0.3
+
     # rewards
     rew_progress: float = 4.0
     rew_smoothness: float = 0.05
@@ -575,14 +579,14 @@ class RoboracerEnv(DirectRLEnv):
             steer_action * self.steer_left_max_rad,
             steer_action * self.steer_right_max_rad,
         )
-        throttle = (self._act[:, 1] + 1.0) / 2.0  # [-1,1] -> [0,1]
-
+        thr = self._act[:, 1]  # [-1,1]: forward up to v_max, reverse capped
         dt = self.cfg.sim.dt
         x, y, yaw, v, steer = self.car_state.unbind(dim=1)
         # first-order steering lag (measured tau)
         steer = steer + (steer_cmd - steer) * dt / self.cfg.steer_tau_s
-        # longitudinal: accel-limited approach to commanded speed (per-env DR)
-        v_cmd = throttle * self.vmax_e
+        # longitudinal: accel-limited approach to commanded speed (per-env DR);
+        # negative command = brake through zero then reverse (VESC behavior)
+        v_cmd = torch.where(thr >= 0, thr, thr * self.cfg.reverse_speed_frac) * self.vmax_e
         a_lim = self.amax_e * dt
         dv = torch.clamp(v_cmd - v, -a_lim, a_lim)
         v = v + dv
