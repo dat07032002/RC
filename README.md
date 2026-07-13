@@ -46,6 +46,7 @@ python train_policy.py --steps 100000 --gpu 0
 - [Implementation Guide](docs/PHASES_TIMELINE.md) - 18-week detailed plan
 - [Server Setup](docs/SERVER_SETUP_GUIDE.md) - Infrastructure details
 - [Quick Reference](docs/QUICK_REFERENCE.md) - Phase 1 cheat sheet
+- [School SLAM Test Plan](docs/SCHOOL_SLAM_TEST_PLAN.md) - mapping, localization, and obstacle-preview checklist
 - [Expected Measurements](docs/EXPECTED_MEASUREMENTS.md) - Hardware validation
 
 ## 18-Week Timeline
@@ -83,6 +84,7 @@ python train_policy.py --steps 100000 --gpu 0
 - `PHASES_TIMELINE.md` - Complete 18-week breakdown
 - `SERVER_SETUP_GUIDE.md` - Server infrastructure
 - `QUICK_REFERENCE.md` - Phase 1 quick start
+- `SCHOOL_SLAM_TEST_PLAN.md` - School mapping/localization checklist
 - `PREFLIGHT_CHECKLIST.md` - Hardware verification
 - `EXPECTED_MEASUREMENTS.md` - Sanity check ranges
 
