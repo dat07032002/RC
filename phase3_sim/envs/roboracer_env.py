@@ -468,6 +468,7 @@ class RoboracerEnv(DirectRLEnv):
         # cumulative episode-outcome counters (survive per-env resets)
         self.total_crashes = 0
         self.total_goals = 0
+        self.total_timeouts = 0
 
         # precomputed LiDAR ray angles (car frame), 270 deg FOV
         fov = math.radians(cfg.lidar_fov_deg)
@@ -723,6 +724,7 @@ class RoboracerEnv(DirectRLEnv):
         self.total_crashes += int(self.crashed.sum())
         self.total_goals += int(self.reached_goal.sum())
         time_out = self.episode_length_buf >= self.max_episode_length - 1
+        self.total_timeouts += int((time_out & ~(self.crashed | self.reached_goal)).sum())
         return self.crashed | self.reached_goal, time_out
 
     def _reset_idx(self, env_ids):

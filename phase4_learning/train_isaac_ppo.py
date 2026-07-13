@@ -39,6 +39,16 @@ parser.add_argument("--obstacles", type=str, default="",
                     help="'lo,hi' obstacle-count range override (curriculum stages)")
 parser.add_argument("--dr_level", type=float, default=1.0,
                     help="DR stress 0..1 (curriculum: R1-R3 train at 0.3, R4 ramps to 1.0)")
+parser.add_argument("--target_success", type=float, default=0.0,
+                    help=">0 enables the training gate: stop when the rolling "
+                         "training success rate reaches this (stochastic policy; "
+                         "deterministic eval typically scores ~3-5 pts higher)")
+parser.add_argument("--gate_chunk", type=int, default=100,
+                    help="iterations per gate check")
+parser.add_argument("--patience", type=int, default=6,
+                    help="gate chunks without min_delta improvement -> plateau stop")
+parser.add_argument("--min_delta", type=float, default=0.005,
+                    help="success-rate improvement that resets patience")
 parser.add_argument(
     "--vehicle_params",
     type=str,
@@ -144,7 +154,35 @@ def main():
           f"(~{args_cli.num_envs * agent_cfg.num_steps_per_env * args_cli.max_iterations / 1e6:.0f}M env steps)")
     print(f"[Phase4] logs: {log_dir}")
 
-    runner.learn(num_learning_iterations=args_cli.max_iterations, init_at_random_ep_len=True)
+    raw = env.unwrapped
+    if args_cli.target_success <= 0:
+        runner.learn(num_learning_iterations=args_cli.max_iterations, init_at_random_ep_len=True)
+    else:
+        # gated training: stop on target success rate or plateau
+        best, stall, done_iters = 0.0, 0, 0
+        while done_iters < args_cli.max_iterations:
+            chunk = min(args_cli.gate_chunk, args_cli.max_iterations - done_iters)
+            runner.learn(num_learning_iterations=chunk,
+                         init_at_random_ep_len=(done_iters == 0))
+            done_iters += chunk
+            g, c, t = raw.total_goals, raw.total_crashes, raw.total_timeouts
+            raw.total_goals = raw.total_crashes = raw.total_timeouts = 0
+            episodes = max(g + c + t, 1)
+            sr = g / episodes
+            print(f"[Gate] iters={done_iters} success={100 * sr:.1f}% "
+                  f"(goals {g} / crashes {c} / timeouts {t})")
+            if sr >= args_cli.target_success:
+                print(f"[Gate] TARGET REACHED ({100 * sr:.1f}% >= "
+                      f"{100 * args_cli.target_success:.0f}%) — stopping early")
+                break
+            if sr > best + args_cli.min_delta:
+                best, stall = sr, 0
+            else:
+                stall += 1
+                if stall >= args_cli.patience:
+                    print(f"[Gate] PLATEAU (best {100 * best:.1f}%, "
+                          f"{stall} chunks without +{args_cli.min_delta}) — stopping")
+                    break
 
     print("[Phase4] training complete")
     env.close()
