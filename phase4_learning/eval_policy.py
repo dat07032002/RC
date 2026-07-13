@@ -22,6 +22,8 @@ parser.add_argument("--num_envs", type=int, default=512)
 parser.add_argument("--steps", type=int, default=1500, help="eval horizon (control steps)")
 parser.add_argument("--track_type", type=str, default="room", choices=["corridor", "room"])
 parser.add_argument("--obstacles", type=str, default="")
+parser.add_argument("--obstacle_size", type=str, default="",
+                    help="'lo,hi' box side range override (diagnostics)")
 parser.add_argument("--seed", type=int, default=1234, help="held-out eval seed")
 parser.add_argument(
     "--vehicle_params", type=str,
@@ -83,6 +85,9 @@ def main():
             cfg.dr_room_obstacles = (lo, hi)
         else:
             cfg.dr_num_obstacles = (lo, hi)
+    if args_cli.obstacle_size:
+        lo, hi = (float(x) for x in args_cli.obstacle_size.split(","))
+        cfg.dr_room_obstacle_size = (lo, hi)
     cfg.scene.num_envs = args_cli.num_envs
     cfg.seed = args_cli.seed
 

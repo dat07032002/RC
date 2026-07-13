@@ -71,7 +71,10 @@ def build_agent_cfg() -> RslRlOnPolicyRunnerCfg:
     return RslRlOnPolicyRunnerCfg(
         seed=args_cli.seed,
         device="cuda:0",
-        num_steps_per_env=24,          # rollout horizon per env per iteration
+        # 64 steps = 3.2 s: detours around large obstacles take seconds of
+        # locally-negative shaping before paying off, and this is also the
+        # GRU's BPTT window — 24 (1.2 s) measurably capped R2 at ~60% success
+        num_steps_per_env=64,
         max_iterations=args_cli.max_iterations,
         save_interval=100,
         experiment_name="roboracer_stage3",
@@ -90,7 +93,7 @@ def build_agent_cfg() -> RslRlOnPolicyRunnerCfg:
             value_loss_coef=1.0,
             use_clipped_value_loss=True,
             clip_param=0.2,
-            entropy_coef=0.005,
+            entropy_coef=0.01,   # detour discovery needs exploration
             num_learning_epochs=5,
             num_mini_batches=4,
             learning_rate=5.0e-4,
